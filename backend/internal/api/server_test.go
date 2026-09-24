@@ -2,12 +2,15 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/dmytrosobko/crypto-strategy-assistant/backend/internal/config"
+	"github.com/dmytrosobko/crypto-strategy-assistant/backend/internal/market"
 	"github.com/dmytrosobko/crypto-strategy-assistant/backend/internal/storage"
 )
 
@@ -48,5 +51,30 @@ func TestPortfolioAndConfigEndpoints(t *testing.T) {
 	handler.ServeHTTP(configResponse, httptest.NewRequest(http.MethodGet, "/api/config", nil))
 	if configResponse.Code != http.StatusOK || !bytes.Contains(configResponse.Body.Bytes(), []byte(`"pullbackMinPct":10`)) {
 		t.Fatalf("unexpected config response (%d): %s", configResponse.Code, configResponse.Body.String())
+	}
+}
+
+func TestMarketEndpointReturnsPersistedCurrentPrice(t *testing.T) {
+	store, err := storage.Open(filepath.Join(t.TempDir(), "assistant.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { store.Close() })
+	if err := store.Migrate("../../migrations"); err != nil {
+		t.Fatalf("migrate store: %v", err)
+	}
+	updatedAt := time.Date(2026, time.January, 3, 12, 0, 0, 0, time.UTC)
+	if err := store.SaveCurrentPrice(context.Background(), market.Snapshot{Symbol: "BTC", Price: 84200.5, UpdatedAt: updatedAt}); err != nil {
+		t.Fatalf("save market snapshot: %v", err)
+	}
+	handler := NewServer(store, config.Config{}).Routes()
+
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/market/btc", nil))
+	if response.Code != http.StatusOK {
+		t.Fatalf("market status = %d, body = %s", response.Code, response.Body.String())
+	}
+	if !bytes.Contains(response.Body.Bytes(), []byte(`"symbol":"BTC"`)) || !bytes.Contains(response.Body.Bytes(), []byte(`"price":84200.5`)) || !bytes.Contains(response.Body.Bytes(), []byte(`"updatedAt":"2026-01-03T12:00:00Z"`)) {
+		t.Fatalf("unexpected market response: %s", response.Body.String())
 	}
 }
