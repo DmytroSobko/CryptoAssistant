@@ -78,5 +78,9 @@ func isStrictPivot(candles []market.Candle, index, pivotLeft, pivotRight int, ca
 }
 
 func finitePositive(value float64) bool {
-	return value > 0 && !math.IsNaN(value) && !math.IsInf(value, 0)
+	return value > 0 && !isNaNOrInf(value)
+}
+
+func isNaNOrInf(value float64) bool {
+	return math.IsNaN(value) || math.IsInf(value, 0)
 }

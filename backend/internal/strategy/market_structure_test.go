@@ -106,6 +106,139 @@ func TestClassifyTrendUsesLatestCompletedCloseAndSMA200(t *testing.T) {
 	}
 }
 
+func TestLatestHigherLowUsesConfirmedConsecutiveLocalLowsAfterCorrection(t *testing.T) {
+	tests := []struct {
+		name       string
+		prices     []float64
+		afterIndex int
+		wantOK     bool
+		initial    int
+		higher     int
+	}{
+		{
+			name:       "detects the newest higher low after the correction high",
+			prices:     []float64{100, 120, 100, 80, 90, 85, 95, 96, 110},
+			afterIndex: 1,
+			wantOK:     true,
+			initial:    3,
+			higher:     5,
+		},
+		{
+			name:       "does not use lows before the correction high",
+			prices:     []float64{80, 100, 85, 120, 110, 115, 112},
+			afterIndex: 3,
+			wantOK:     false,
+		},
+		{
+			name:       "a lower second low is not a higher low",
+			prices:     []float64{100, 120, 100, 90, 100, 80, 100},
+			afterIndex: 1,
+			wantOK:     false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			higherLow, ok := LatestHigherLow(candleFixture(test.prices), 1, 1, test.afterIndex)
+			if ok != test.wantOK {
+				t.Fatalf("LatestHigherLow ok = %v; want %v (%+v)", ok, test.wantOK, higherLow)
+			}
+			if ok && (higherLow.InitialLow.Index != test.initial || higherLow.Pivot.Index != test.higher) {
+				t.Fatalf("higher low = %+v; want lows at %d then %d", higherLow, test.initial, test.higher)
+			}
+		})
+	}
+}
+
+func TestFindRecoveryBreakoutUsesRecoveryHighAndLatestCompletedClose(t *testing.T) {
+	tests := []struct {
+		name      string
+		prices    []float64
+		close     float64
+		bufferPct float64
+		wantOK    bool
+		wantHigh  int
+		wantBreak bool
+		threshold float64
+	}{
+		{
+			name:      "breaks above the confirmed recovery high",
+			prices:    []float64{100, 120, 100, 80, 90, 85, 95, 96},
+			close:     96,
+			bufferPct: 0,
+			wantOK:    true,
+			wantHigh:  4,
+			wantBreak: true,
+			threshold: 90,
+		},
+		{
+			name:      "buffer requires a close strictly above the buffered high",
+			prices:    []float64{100, 120, 100, 80, 90, 85, 95, 94.5},
+			close:     94.5,
+			bufferPct: 5,
+			wantOK:    true,
+			wantHigh:  4,
+			wantBreak: false,
+			threshold: 94.5,
+		},
+		{
+			name:      "does not treat one confirmed low as a recovery",
+			prices:    []float64{100, 120, 100, 80, 85, 90},
+			close:     90,
+			bufferPct: 0,
+			wantOK:    false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			candles := candleFixture(test.prices)
+			candles[len(candles)-1].Close = test.close
+			breakout, ok := FindRecoveryBreakout(candles, 1, 1, 1, test.bufferPct)
+			if ok != test.wantOK {
+				t.Fatalf("FindRecoveryBreakout ok = %v; want %v (%+v)", ok, test.wantOK, breakout)
+			}
+			if !ok {
+				return
+			}
+			if breakout.Recovery.RecoveryHigh.Index != test.wantHigh || breakout.Confirmed != test.wantBreak || !approximatelyEqual(breakout.ThresholdPrice, test.threshold) {
+				t.Fatalf("breakout = %+v; want high index %d, confirmed %v, threshold %v", breakout, test.wantHigh, test.wantBreak, test.threshold)
+			}
+		})
+	}
+
+	if _, ok := FindRecoveryBreakout(candleFixture([]float64{100, 120, 100, 80, 90, 85, 95, 88, 100, 96}), 1, 1, 1, -0.1); ok {
+		t.Fatal("a negative breakout buffer should be unavailable")
+	}
+}
+
+func TestEntryAllowedByTrend(t *testing.T) {
+	tests := []struct {
+		name           string
+		mode           string
+		trend          Trend
+		strongRecovery bool
+		want           bool
+	}{
+		{"strict permits only a close above SMA200", TrendModeStrict, TrendBullish, false, true},
+		{"strict rejects bearish recovery", TrendModeStrict, TrendBearish, true, false},
+		{"strict rejects insufficient SMA200 history", TrendModeStrict, TrendUnknown, true, false},
+		{"recovery permits a strong recovery below SMA200", TrendModeRecovery, TrendBearish, true, true},
+		{"recovery still requires structure below SMA200", TrendModeRecovery, TrendBearish, false, false},
+		{"recovery permits bullish entries", TrendModeRecovery, TrendBullish, false, true},
+		{"off has no moving average filter", TrendModeOff, TrendUnknown, false, true},
+		{"unknown modes fail closed", "anything", TrendBullish, true, false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := EntryAllowedByTrend(test.mode, test.trend, test.strongRecovery); got != test.want {
+				t.Fatalf("EntryAllowedByTrend(%q, %q, %v) = %v; want %v", test.mode, test.trend, test.strongRecovery, got, test.want)
+			}
+		})
+	}
+}
+
 func candleFixture(prices []float64) []market.Candle {
 	start := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
 	candles := make([]market.Candle, len(prices))
