@@ -1,6 +1,7 @@
 # Runtime data and local configuration
 backend/data/
 .env
+.documentation/
 
 # JavaScript / Vite / Tauri build output
 frontend/node_modules/
@@ -11,4 +12,3 @@ src-tauri/target/
 .DS_Store
 .idea/
 .vscode/
-
