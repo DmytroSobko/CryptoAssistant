@@ -18,9 +18,17 @@ func DefaultStrategyConfig(symbol string) strategy.Config {
 }
 
 func (s *Store) GetStrategyConfig(ctx context.Context, symbol string) (strategy.Config, error) {
+	return getStrategyConfig(ctx, s.db, symbol)
+}
+
+type queryRower interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}
+
+func getStrategyConfig(ctx context.Context, db queryRower, symbol string) (strategy.Config, error) {
 	key := "strategy_config_" + symbol
 	var raw string
-	err := s.db.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = ?`, key).Scan(&raw)
+	err := db.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = ?`, key).Scan(&raw)
 	if errors.Is(err, sql.ErrNoRows) {
 		return DefaultStrategyConfig(symbol), nil
 	}

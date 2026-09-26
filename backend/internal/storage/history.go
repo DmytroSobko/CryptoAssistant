@@ -13,6 +13,7 @@ type StrategyEvent struct {
 	Price     float64   `json:"price"`
 	Reason    string    `json:"reason"`
 	State     string    `json:"state"`
+	EventKey  string    `json:"-"`
 }
 
 func (s *Store) ListStrategyEvents(ctx context.Context, limit int) ([]StrategyEvent, error) {

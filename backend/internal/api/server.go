@@ -12,15 +12,17 @@ import (
 	"github.com/dmytrosobko/crypto-strategy-assistant/backend/internal/portfolio"
 	"github.com/dmytrosobko/crypto-strategy-assistant/backend/internal/storage"
 	"github.com/dmytrosobko/crypto-strategy-assistant/backend/internal/strategy"
+	"github.com/dmytrosobko/crypto-strategy-assistant/backend/internal/strategyservice"
 )
 
 type Server struct {
-	store *storage.Store
-	cfg   config.Config
+	store           *storage.Store
+	cfg             config.Config
+	strategyService *strategyservice.Service
 }
 
 func NewServer(store *storage.Store, cfg config.Config) *Server {
-	return &Server{store: store, cfg: cfg}
+	return &Server{store: store, cfg: cfg, strategyService: strategyservice.New(store)}
 }
 
 func (s *Server) Routes() http.Handler {
@@ -60,13 +62,12 @@ func (s *Server) handleStrategy(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "asset must be BTC or ETH")
 		return
 	}
-	writeJSON(w, http.StatusNotImplemented, strategy.Result{
-		Asset:         asset,
-		Action:        strategy.ActionWait,
-		State:         strategy.StateCash,
-		Reason:        "Strategy evaluation will be enabled after the market-data and rule-engine phases are implemented.",
-		NextCondition: "Load daily candles and evaluate the configured rules.",
-	})
+	result, err := s.strategyService.Evaluate(r.Context(), asset)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not evaluate strategy")
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (s *Server) handleGetPortfolio(w http.ResponseWriter, r *http.Request) {

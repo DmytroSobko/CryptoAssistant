@@ -14,6 +14,10 @@ import (
 // evaluate an asset deterministically. A state is created only after a caller
 // saves one, so an unseen asset starts in CASH.
 func (s *Store) GetStrategyState(ctx context.Context, asset string) (strategy.PersistedState, error) {
+	return getStrategyState(ctx, s.db, asset)
+}
+
+func getStrategyState(ctx context.Context, db queryRower, asset string) (strategy.PersistedState, error) {
 	asset, err := strategyAsset(asset)
 	if err != nil {
 		return strategy.PersistedState{}, err
@@ -22,7 +26,7 @@ func (s *Store) GetStrategyState(ctx context.Context, asset string) (strategy.Pe
 	state := strategy.PersistedState{Asset: asset, CurrentState: strategy.StateCash}
 	var currentState string
 	var correctionHighAt, lastBreakoutHighAt, lastBreakoutHigherLowAt, reentryAfter sql.NullString
-	err = s.db.QueryRowContext(ctx, `
+	err = db.QueryRowContext(ctx, `
 		SELECT state,
 			COALESCE(local_high, 0), COALESCE(local_low, 0), COALESCE(higher_low, 0),
 			COALESCE(highest_price, 0), COALESCE(drawdown_pct, 0),
@@ -59,6 +63,14 @@ func (s *Store) GetStrategyState(ctx context.Context, asset string) (strategy.Pe
 // SaveStrategyState persists only engine state. It does not evaluate a
 // strategy, mutate a portfolio, or create an event.
 func (s *Store) SaveStrategyState(ctx context.Context, state strategy.PersistedState) error {
+	return saveStrategyState(ctx, s.db, state)
+}
+
+type execer interface {
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
+}
+
+func saveStrategyState(ctx context.Context, db execer, state strategy.PersistedState) error {
 	asset, err := strategyAsset(state.Asset)
 	if err != nil {
 		return err
@@ -75,7 +87,7 @@ func (s *Store) SaveStrategyState(ctx context.Context, state strategy.PersistedS
 		}
 	}
 
-	_, err = s.db.ExecContext(ctx, `
+	_, err = db.ExecContext(ctx, `
 		INSERT INTO strategy_states (
 			asset, state, local_high, local_low, higher_low, highest_price, drawdown_pct,
 			correction_high_at, last_breakout_high_at, last_breakout_higher_low_at, reentry_after,
@@ -100,10 +112,13 @@ func (s *Store) SaveStrategyState(ctx context.Context, state strategy.PersistedS
 	return nil
 }
 
-// AppendStrategyEvent records an advisory strategy result. Callers decide
-// which results are meaningful events; this method never deduplicates or
-// triggers alerts.
+// AppendStrategyEvent records an advisory strategy result idempotently. Callers
+// decide which results are meaningful events; it never triggers alerts.
 func (s *Store) AppendStrategyEvent(ctx context.Context, event StrategyEvent) error {
+	return appendStrategyEvent(ctx, s.db, event)
+}
+
+func appendStrategyEvent(ctx context.Context, db execer, event StrategyEvent) error {
 	asset, err := strategyAsset(event.Asset)
 	if err != nil {
 		return err
@@ -117,8 +132,11 @@ func (s *Store) AppendStrategyEvent(ctx context.Context, event StrategyEvent) er
 	if math.IsNaN(event.Price) || math.IsInf(event.Price, 0) || event.Price < 0 {
 		return fmt.Errorf("strategy event price must be finite and non-negative")
 	}
-	_, err = s.db.ExecContext(ctx, `INSERT INTO strategy_events(asset, timestamp, action, price, reason, state) VALUES (?, ?, ?, ?, ?, ?)`,
-		asset, databaseTime(event.Timestamp), event.Action, event.Price, event.Reason, event.State)
+	if event.EventKey == "" {
+		event.EventKey = fmt.Sprintf("%s|%s|%s|%s|%.8f", asset, databaseTime(event.Timestamp), event.Action, event.State, event.Price)
+	}
+	_, err = db.ExecContext(ctx, `INSERT INTO strategy_events(asset, timestamp, action, price, reason, state, event_key) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(event_key) DO NOTHING`,
+		asset, databaseTime(event.Timestamp), event.Action, event.Price, event.Reason, event.State, event.EventKey)
 	if err != nil {
 		return fmt.Errorf("append %s strategy event: %w", asset, err)
 	}

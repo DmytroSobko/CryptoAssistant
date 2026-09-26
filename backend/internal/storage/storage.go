@@ -9,12 +9,14 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 
 	_ "modernc.org/sqlite"
 )
 
 type Store struct {
-	db *sql.DB
+	db         *sql.DB
+	strategyMu sync.Mutex
 }
 
 func Open(path string) (*Store, error) {
