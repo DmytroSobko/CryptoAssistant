@@ -13,6 +13,11 @@ export interface Portfolio {
   assets: AssetPosition[];
 }
 
+export interface PortfolioInput {
+  cashBalance: number;
+  assets: Array<Omit<AssetPosition, "updatedAt">>;
+}
+
 export interface MarketSnapshot {
   symbol: AssetSymbol;
   price: number;

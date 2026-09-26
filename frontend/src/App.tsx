@@ -2,13 +2,14 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "./api/client";
 import { DashboardPage } from "./pages/DashboardPage";
 import { PlaceholderPage } from "./pages/PlaceholderPage";
+import { PortfolioPage } from "./pages/PortfolioPage";
 import type { AssetSymbol, MarketSnapshot, Portfolio, StrategyResult } from "./types/api";
 
 type Page = "dashboard" | "portfolio" | "history" | "settings";
 
 const pages: Record<Page, { label: string; description?: string }> = {
   dashboard: { label: "Dashboard" },
-  portfolio: { label: "Portfolio", description: "Manual portfolio editing is connected to the API. The form will be added with the portfolio phase." },
+  portfolio: { label: "Portfolio" },
   history: { label: "History", description: "Signal history is persisted in SQLite and will appear here once the strategy engine emits events." },
   settings: { label: "Strategy settings", description: "BTC and ETH strategy defaults are persisted through the API. The configuration form follows with the strategy phase." },
 };
@@ -48,6 +49,17 @@ export default function App() {
     });
   }, []);
 
+  function handlePortfolioSaved(savedPortfolio: Portfolio) {
+    setPortfolio(savedPortfolio);
+    // A manual position change is an observed strategy fact (for example, a
+    // user closing a position). Re-evaluate from completed daily candles.
+    void Promise.allSettled([api.strategy("BTC"), api.strategy("ETH")]).then((results) => {
+      const [btcStrategy, ethStrategy] = results;
+      if (btcStrategy.status === "fulfilled") setStrategy((current) => ({ ...current, BTC: btcStrategy.value }));
+      if (ethStrategy.status === "fulfilled") setStrategy((current) => ({ ...current, ETH: ethStrategy.value }));
+    });
+  }
+
   return (
     <main className="app-shell">
       <aside className="sidebar">
@@ -58,7 +70,9 @@ export default function App() {
         <p className={connectionError ? "connection connection--error" : "connection"}>{connectionError ? `Data unavailable: ${connectionError}` : "Local API connected"}</p>
       </aside>
       <section className="content">
-        {page === "dashboard" ? <DashboardPage portfolio={portfolio} market={market} strategy={strategy} isLoading={isDashboardLoading} /> : <PlaceholderPage title={pages[page].label} description={pages[page].description!} />}
+        {page === "dashboard" && <DashboardPage portfolio={portfolio} market={market} strategy={strategy} isLoading={isDashboardLoading} />}
+        {page === "portfolio" && <PortfolioPage isLoading={isDashboardLoading} onSaved={handlePortfolioSaved} portfolio={portfolio} />}
+        {(page === "history" || page === "settings") && <PlaceholderPage title={pages[page].label} description={pages[page].description!} />}
       </section>
     </main>
   );
