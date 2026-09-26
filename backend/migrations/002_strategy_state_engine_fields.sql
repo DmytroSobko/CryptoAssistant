@@ -1,0 +1,10 @@
+ALTER TABLE strategy_states ADD COLUMN correction_high_at TEXT;
+ALTER TABLE strategy_states ADD COLUMN last_breakout_high_at TEXT;
+ALTER TABLE strategy_states ADD COLUMN last_breakout_higher_low_at TEXT;
+ALTER TABLE strategy_states ADD COLUMN reentry_after TEXT;
+ALTER TABLE strategy_states ADD COLUMN entry_step INTEGER NOT NULL DEFAULT 0 CHECK (entry_step BETWEEN 0 AND 3);
+ALTER TABLE strategy_states ADD COLUMN profit_taken INTEGER NOT NULL DEFAULT 0 CHECK (profit_taken IN (0, 1));
+ALTER TABLE strategy_states ADD COLUMN drawdown1_triggered INTEGER NOT NULL DEFAULT 0 CHECK (drawdown1_triggered IN (0, 1));
+ALTER TABLE strategy_states ADD COLUMN drawdown2_triggered INTEGER NOT NULL DEFAULT 0 CHECK (drawdown2_triggered IN (0, 1));
+ALTER TABLE strategy_states ADD COLUMN drawdown3_triggered INTEGER NOT NULL DEFAULT 0 CHECK (drawdown3_triggered IN (0, 1));
+ALTER TABLE strategy_states ADD COLUMN position_open INTEGER NOT NULL DEFAULT 0 CHECK (position_open IN (0, 1));

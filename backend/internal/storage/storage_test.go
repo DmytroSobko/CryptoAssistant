@@ -8,6 +8,7 @@ import (
 
 	"github.com/dmytrosobko/crypto-strategy-assistant/backend/internal/market"
 	"github.com/dmytrosobko/crypto-strategy-assistant/backend/internal/portfolio"
+	"github.com/dmytrosobko/crypto-strategy-assistant/backend/internal/strategy"
 )
 
 func TestMigrateAndPersistPortfolio(t *testing.T) {
@@ -124,5 +125,71 @@ func TestMarketStorageRejectsInvalidValues(t *testing.T) {
 	err = store.SaveCurrentPrice(context.Background(), market.Snapshot{Symbol: "DOGE", Price: 1, UpdatedAt: time.Now()})
 	if err == nil {
 		t.Fatalf("expected invalid asset error, got %v", err)
+	}
+}
+
+func TestPersistExpandedStrategyStateAndEvents(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "assistant.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer store.Close()
+	if err := store.Migrate("../../migrations"); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	initial, err := store.GetStrategyState(context.Background(), "BTC")
+	if err != nil {
+		t.Fatalf("get initial state: %v", err)
+	}
+	if initial.Asset != "BTC" || initial.CurrentState != strategy.StateCash {
+		t.Fatalf("unexpected initial state: %+v", initial)
+	}
+
+	anchor := time.Date(2026, time.January, 2, 0, 0, 0, 0, time.UTC)
+	expected := strategy.PersistedState{
+		Asset: "BTC", CurrentState: strategy.StateProfitProtection,
+		LocalHigh: 120, LocalLow: 90, HigherLow: 100, HighestPrice: 140, DrawdownPct: -8,
+		CorrectionHighAt: anchor, LastBreakoutHighAt: anchor.AddDate(0, 0, 5), LastBreakoutHigherLowAt: anchor.AddDate(0, 0, 4), ReentryAfter: anchor.AddDate(0, 0, -3),
+		EntryStep: 2, ProfitTaken: true, Drawdown1Triggered: true, Drawdown2Triggered: true, PositionOpen: true,
+	}
+	if err := store.SaveStrategyState(context.Background(), expected); err != nil {
+		t.Fatalf("save state: %v", err)
+	}
+	actual, err := store.GetStrategyState(context.Background(), "BTC")
+	if err != nil {
+		t.Fatalf("get state: %v", err)
+	}
+	if actual != expected {
+		t.Fatalf("state round trip mismatch: got %+v, want %+v", actual, expected)
+	}
+
+	event := StrategyEvent{Asset: "BTC", Timestamp: anchor.Add(12 * time.Hour), Action: string(strategy.ActionSellProfit), Price: 135, Reason: "Configured profit target reached.", State: string(strategy.StateProfitProtection)}
+	if err := store.AppendStrategyEvent(context.Background(), event); err != nil {
+		t.Fatalf("append event: %v", err)
+	}
+	events, err := store.ListStrategyEvents(context.Background(), 10)
+	if err != nil {
+		t.Fatalf("list events: %v", err)
+	}
+	if len(events) != 1 || events[0].Asset != event.Asset || events[0].Action != event.Action || events[0].Price != event.Price || !events[0].Timestamp.Equal(event.Timestamp) {
+		t.Fatalf("event round trip mismatch: got %+v, want %+v", events, event)
+	}
+}
+
+func TestStrategyStorageRejectsInvalidState(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "assistant.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer store.Close()
+	if err := store.Migrate("../../migrations"); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	if err := store.SaveStrategyState(context.Background(), strategy.PersistedState{Asset: "BTC", CurrentState: "UNKNOWN"}); err == nil {
+		t.Fatal("expected invalid state to be rejected")
+	}
+	if err := store.AppendStrategyEvent(context.Background(), StrategyEvent{Asset: "DOGE", Timestamp: time.Now(), Action: "HOLD", Price: 1, Reason: "test", State: "CASH"}); err == nil {
+		t.Fatal("expected invalid event asset to be rejected")
 	}
 }
