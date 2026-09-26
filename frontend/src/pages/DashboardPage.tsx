@@ -1,11 +1,14 @@
 import { AssetCard } from "../components/AssetCard";
-import type { Portfolio } from "../types/api";
+import type { AssetSymbol, MarketSnapshot, Portfolio, StrategyResult } from "../types/api";
 
 interface DashboardPageProps {
   portfolio: Portfolio | null;
+  market: Record<AssetSymbol, MarketSnapshot | null>;
+  strategy: Record<AssetSymbol, StrategyResult | null>;
+  isLoading: boolean;
 }
 
-export function DashboardPage({ portfolio }: DashboardPageProps) {
+export function DashboardPage({ portfolio, market, strategy, isLoading }: DashboardPageProps) {
   const position = (symbol: "BTC" | "ETH") => portfolio?.assets.find((asset) => asset.symbol === symbol);
   return (
     <>
@@ -17,10 +20,9 @@ export function DashboardPage({ portfolio }: DashboardPageProps) {
         <p className="cash-balance">Cash balance: <strong>${(portfolio?.cashBalance ?? 0).toLocaleString()}</strong></p>
       </header>
       <div className="asset-grid">
-        <AssetCard asset="BTC" position={position("BTC")} />
-        <AssetCard asset="ETH" position={position("ETH")} />
+        <AssetCard asset="BTC" position={position("BTC")} market={market.BTC} strategy={strategy.BTC} isLoading={isLoading} />
+        <AssetCard asset="ETH" position={position("ETH")} market={market.ETH} strategy={strategy.ETH} isLoading={isLoading} />
       </div>
     </>
   );
 }
-

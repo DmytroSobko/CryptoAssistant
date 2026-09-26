@@ -22,10 +22,12 @@ export interface MarketSnapshot {
 export interface StrategyResult {
   asset: AssetSymbol;
   action: string;
+  actionPct: number;
   state: string;
   price: number;
   trend: string;
   positionPct: number;
+  profitLossPct: number;
   pullbackPct: number;
   localHigh: number;
   localLow: number;
@@ -53,4 +55,3 @@ export interface StrategyConfig {
   drawdown3Pct: number;
   drawdown3SellPct: number;
 }
-

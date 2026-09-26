@@ -1,4 +1,4 @@
-import type { Portfolio, StrategyConfig } from "../types/api";
+import type { AssetSymbol, MarketSnapshot, Portfolio, StrategyConfig, StrategyResult } from "../types/api";
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8080";
 
@@ -25,6 +25,8 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 
 export const api = {
   health: () => request<{ status: string }>("/healthz"),
+  market: (asset: AssetSymbol) => request<MarketSnapshot>(`/api/market/${asset}`),
+  strategy: (asset: AssetSymbol) => request<StrategyResult>(`/api/strategy/${asset}`),
   portfolio: () => request<Portfolio>("/api/portfolio"),
   savePortfolio: (portfolio: Portfolio) => request<void>("/api/portfolio", { method: "PUT", body: JSON.stringify(portfolio) }),
   config: () => request<Record<"BTC" | "ETH", StrategyConfig>>("/api/config"),
