@@ -130,6 +130,10 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if err := strategy.ValidateConfig(input); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	if err := s.store.SaveStrategyConfig(r.Context(), asset, input); err != nil {
 		writeError(w, http.StatusInternalServerError, "could not save configuration")
 		return

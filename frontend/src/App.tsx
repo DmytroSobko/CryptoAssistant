@@ -2,17 +2,17 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "./api/client";
 import { DashboardPage } from "./pages/DashboardPage";
 import { HistoryPage } from "./pages/HistoryPage";
-import { PlaceholderPage } from "./pages/PlaceholderPage";
 import { PortfolioPage } from "./pages/PortfolioPage";
+import { StrategySettingsPage } from "./pages/StrategySettingsPage";
 import type { AssetSymbol, MarketSnapshot, Portfolio, StrategyResult } from "./types/api";
 
 type Page = "dashboard" | "portfolio" | "history" | "settings";
 
-const pages: Record<Page, { label: string; description?: string }> = {
+const pages: Record<Page, { label: string }> = {
   dashboard: { label: "Dashboard" },
   portfolio: { label: "Portfolio" },
   history: { label: "History" },
-  settings: { label: "Strategy settings", description: "BTC and ETH strategy defaults are persisted through the API. The configuration form follows with the strategy phase." },
+  settings: { label: "Strategy settings" },
 };
 
 export default function App() {
@@ -74,7 +74,7 @@ export default function App() {
         {page === "dashboard" && <DashboardPage portfolio={portfolio} market={market} strategy={strategy} isLoading={isDashboardLoading} />}
         {page === "portfolio" && <PortfolioPage isLoading={isDashboardLoading} onSaved={handlePortfolioSaved} portfolio={portfolio} />}
         {page === "history" && <HistoryPage />}
-        {page === "settings" && <PlaceholderPage title={pages.settings.label} description={pages.settings.description!} />}
+        {page === "settings" && <StrategySettingsPage />}
       </section>
     </main>
   );

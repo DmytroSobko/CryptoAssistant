@@ -26,11 +26,15 @@ type queryRower interface {
 }
 
 func getStrategyConfig(ctx context.Context, db queryRower, symbol string) (strategy.Config, error) {
-	key := "strategy_config_" + symbol
+	asset, err := strategyAsset(symbol)
+	if err != nil {
+		return strategy.Config{}, err
+	}
+	key := "strategy_config_" + asset
 	var raw string
-	err := db.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = ?`, key).Scan(&raw)
+	err = db.QueryRowContext(ctx, `SELECT value FROM settings WHERE key = ?`, key).Scan(&raw)
 	if errors.Is(err, sql.ErrNoRows) {
-		return DefaultStrategyConfig(symbol), nil
+		return DefaultStrategyConfig(asset), nil
 	}
 	if err != nil {
 		return strategy.Config{}, err
@@ -39,14 +43,24 @@ func getStrategyConfig(ctx context.Context, db queryRower, symbol string) (strat
 	if err := json.Unmarshal([]byte(raw), &cfg); err != nil {
 		return strategy.Config{}, fmt.Errorf("decode %s: %w", key, err)
 	}
+	if err := strategy.ValidateConfig(cfg); err != nil {
+		return strategy.Config{}, fmt.Errorf("validate %s: %w", key, err)
+	}
 	return cfg, nil
 }
 
 func (s *Store) SaveStrategyConfig(ctx context.Context, symbol string, config strategy.Config) error {
+	asset, err := strategyAsset(symbol)
+	if err != nil {
+		return err
+	}
+	if err := strategy.ValidateConfig(config); err != nil {
+		return err
+	}
 	raw, err := json.Marshal(config)
 	if err != nil {
 		return err
 	}
-	_, err = s.db.ExecContext(ctx, `INSERT INTO settings(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, "strategy_config_"+symbol, string(raw))
+	_, err = s.db.ExecContext(ctx, `INSERT INTO settings(key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`, "strategy_config_"+asset, string(raw))
 	return err
 }

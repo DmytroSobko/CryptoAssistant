@@ -53,6 +53,14 @@ func TestPortfolioAndConfigEndpoints(t *testing.T) {
 	if configResponse.Code != http.StatusOK || !bytes.Contains(configResponse.Body.Bytes(), []byte(`"pullbackMinPct":10`)) {
 		t.Fatalf("unexpected config response (%d): %s", configResponse.Code, configResponse.Body.String())
 	}
+
+	invalidConfig := httptest.NewRequest(http.MethodPut, "/api/config/BTC", bytes.NewBufferString(`{"pullbackMinPct":0}`))
+	invalidConfig.Header.Set("Content-Type", "application/json")
+	invalidConfigResponse := httptest.NewRecorder()
+	handler.ServeHTTP(invalidConfigResponse, invalidConfig)
+	if invalidConfigResponse.Code != http.StatusBadRequest {
+		t.Fatalf("invalid config status = %d, body = %s", invalidConfigResponse.Code, invalidConfigResponse.Body.String())
+	}
 }
 
 func TestMarketEndpointReturnsPersistedCurrentPrice(t *testing.T) {

@@ -189,6 +189,9 @@ func TestStrategyStorageRejectsInvalidState(t *testing.T) {
 	if err := store.SaveStrategyState(context.Background(), strategy.PersistedState{Asset: "BTC", CurrentState: "UNKNOWN"}); err == nil {
 		t.Fatal("expected invalid state to be rejected")
 	}
+	if err := store.SaveStrategyConfig(context.Background(), "BTC", strategy.Config{}); err == nil {
+		t.Fatal("expected invalid strategy configuration to be rejected")
+	}
 	if err := store.AppendStrategyEvent(context.Background(), StrategyEvent{Asset: "DOGE", Timestamp: time.Now(), Action: "HOLD", Price: 1, Reason: "test", State: "CASH"}); err == nil {
 		t.Fatal("expected invalid event asset to be rejected")
 	}
