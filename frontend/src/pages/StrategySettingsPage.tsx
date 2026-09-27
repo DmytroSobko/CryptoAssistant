@@ -123,6 +123,11 @@ export function StrategySettingsPage() {
   const updateField = (field: NumericField, value: string) => {
     setForms((current) => ({ ...current, [selectedAsset]: current[selectedAsset] ? { ...current[selectedAsset], [field]: value } : null }));
   };
+  const selectAsset = (asset: AssetSymbol) => {
+    setSelectedAsset(asset);
+    setError(null);
+    setSaved(false);
+  };
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -163,7 +168,11 @@ export function StrategySettingsPage() {
       </header>
 
       <div aria-label="Asset settings" className="asset-tabs" role="tablist">
-        {(["BTC", "ETH"] as AssetSymbol[]).map((asset) => <button aria-selected={selectedAsset === asset} className={selectedAsset === asset ? "asset-tab asset-tab--active" : "asset-tab" key={asset} onClick={() => { setSelectedAsset(asset); setError(null); setSaved(false); }} role="tab" type="button">{asset}</button>)}
+        {(["BTC", "ETH"] as AssetSymbol[]).map((asset) => (
+          <button aria-selected={selectedAsset === asset} className={selectedAsset === asset ? "asset-tab asset-tab--active" : "asset-tab"} key={asset} onClick={() => selectAsset(asset)} role="tab" type="button">
+            {asset}
+          </button>
+        ))}
       </div>
 
       <form className="settings-form" onSubmit={save}>
