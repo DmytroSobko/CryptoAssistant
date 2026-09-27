@@ -41,6 +41,16 @@ export interface StrategyResult {
   nextCondition: string;
 }
 
+export interface StrategyEvent {
+  id: number;
+  asset: AssetSymbol;
+  timestamp: string;
+  action: string;
+  price: number;
+  reason: string;
+  state: string;
+}
+
 export interface StrategyConfig {
   pullbackMinPct: number;
   pivotLeft: number;

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "./api/client";
 import { DashboardPage } from "./pages/DashboardPage";
+import { HistoryPage } from "./pages/HistoryPage";
 import { PlaceholderPage } from "./pages/PlaceholderPage";
 import { PortfolioPage } from "./pages/PortfolioPage";
 import type { AssetSymbol, MarketSnapshot, Portfolio, StrategyResult } from "./types/api";
@@ -10,7 +11,7 @@ type Page = "dashboard" | "portfolio" | "history" | "settings";
 const pages: Record<Page, { label: string; description?: string }> = {
   dashboard: { label: "Dashboard" },
   portfolio: { label: "Portfolio" },
-  history: { label: "History", description: "Signal history is persisted in SQLite and will appear here once the strategy engine emits events." },
+  history: { label: "History" },
   settings: { label: "Strategy settings", description: "BTC and ETH strategy defaults are persisted through the API. The configuration form follows with the strategy phase." },
 };
 
@@ -72,7 +73,8 @@ export default function App() {
       <section className="content">
         {page === "dashboard" && <DashboardPage portfolio={portfolio} market={market} strategy={strategy} isLoading={isDashboardLoading} />}
         {page === "portfolio" && <PortfolioPage isLoading={isDashboardLoading} onSaved={handlePortfolioSaved} portfolio={portfolio} />}
-        {(page === "history" || page === "settings") && <PlaceholderPage title={pages[page].label} description={pages[page].description!} />}
+        {page === "history" && <HistoryPage />}
+        {page === "settings" && <PlaceholderPage title={pages.settings.label} description={pages.settings.description!} />}
       </section>
     </main>
   );

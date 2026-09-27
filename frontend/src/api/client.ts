@@ -1,4 +1,4 @@
-import type { AssetSymbol, MarketSnapshot, Portfolio, PortfolioInput, StrategyConfig, StrategyResult } from "../types/api";
+import type { AssetSymbol, MarketSnapshot, Portfolio, PortfolioInput, StrategyConfig, StrategyEvent, StrategyResult } from "../types/api";
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8080";
 
@@ -27,6 +27,7 @@ export const api = {
   health: () => request<{ status: string }>("/healthz"),
   market: (asset: AssetSymbol) => request<MarketSnapshot>(`/api/market/${asset}`),
   strategy: (asset: AssetSymbol) => request<StrategyResult>(`/api/strategy/${asset}`),
+  history: () => request<StrategyEvent[]>("/api/history"),
   portfolio: () => request<Portfolio>("/api/portfolio"),
   savePortfolio: (portfolio: PortfolioInput) => request<void>("/api/portfolio", { method: "PUT", body: JSON.stringify(portfolio) }),
   config: () => request<Record<"BTC" | "ETH", StrategyConfig>>("/api/config"),
