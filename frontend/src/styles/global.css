@@ -17,6 +17,7 @@ nav { display: grid; gap: 6px; }
 .eyebrow { margin: 0 0 5px; color: #72d9b7; font-size: .72rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
 h1, h2 { margin: 0; color: #f5f8fc; } h1 { font-size: 2rem; letter-spacing: -.04em; } h2 { font-size: 1.35rem; }
 .cash-balance { margin: 0; color: #aebdd0; font-size: .9rem; }.cash-balance strong { color: #f5f8fc; }
+.dashboard-summary { display: grid; justify-items: end; gap: 8px; }.dashboard-refresh { display: flex; align-items: center; gap: 10px; color: #8ea0b6; font-size: .75rem; }.market-timestamp { margin: 17px 0 -8px; color: #8294aa; font-size: .73rem; }
 .asset-grid { display: grid; grid-template-columns: repeat(2, minmax(300px, 1fr)); gap: 20px; }
 .asset-card, .placeholder { border: 1px solid #26364c; border-radius: 12px; background: #132033; box-shadow: 0 12px 28px rgba(0, 0, 0, .12); }
 .asset-card { padding: 24px; }.asset-card__heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 22px; }

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./api/client";
 import { DashboardPage } from "./pages/DashboardPage";
 import { HistoryPage } from "./pages/HistoryPage";
@@ -21,22 +21,24 @@ export default function App() {
   const [market, setMarket] = useState<Record<AssetSymbol, MarketSnapshot | null>>({ BTC: null, ETH: null });
   const [strategy, setStrategy] = useState<Record<AssetSymbol, StrategyResult | null>>({ BTC: null, ETH: null });
   const [isDashboardLoading, setIsDashboardLoading] = useState(true);
+  const [lastDashboardRefresh, setLastDashboardRefresh] = useState<Date | null>(null);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const dashboardRequested = useRef(false);
+  const dashboardRefreshInProgress = useRef(false);
 
-  useEffect(() => {
-    // React Strict Mode replays effects in development. Strategy evaluation can
-    // advance persisted state, so issue exactly one initial dashboard request.
-    if (dashboardRequested.current) return;
-    dashboardRequested.current = true;
-
-    void Promise.allSettled([
-      api.portfolio(),
-      api.market("BTC"),
-      api.market("ETH"),
-      api.strategy("BTC"),
-      api.strategy("ETH"),
-    ]).then((results) => {
+  const refreshDashboard = useCallback(async () => {
+    if (dashboardRefreshInProgress.current) return;
+    dashboardRefreshInProgress.current = true;
+    setIsDashboardLoading(true);
+    setConnectionError(null);
+    try {
+      const results = await Promise.allSettled([
+        api.portfolio(),
+        api.market("BTC"),
+        api.market("ETH"),
+        api.strategy("BTC"),
+        api.strategy("ETH"),
+      ]);
       const [portfolioResult, btcMarket, ethMarket, btcStrategy, ethStrategy] = results;
       if (portfolioResult.status === "fulfilled") setPortfolio(portfolioResult.value);
       if (btcMarket.status === "fulfilled") setMarket((current) => ({ ...current, BTC: btcMarket.value }));
@@ -46,19 +48,27 @@ export default function App() {
 
       const failures = results.filter((result): result is PromiseRejectedResult => result.status === "rejected");
       setConnectionError(failures.length > 0 ? failures.map((failure) => failure.reason instanceof Error ? failure.reason.message : "Request failed").join(" · ") : null);
+      setLastDashboardRefresh(new Date());
+    } finally {
+      dashboardRefreshInProgress.current = false;
       setIsDashboardLoading(false);
-    });
+    }
   }, []);
+
+  useEffect(() => {
+    // React Strict Mode replays effects in development. Strategy evaluation can
+    // advance persisted state, so issue exactly one initial dashboard request.
+    if (dashboardRequested.current) return;
+    dashboardRequested.current = true;
+
+    void refreshDashboard();
+  }, [refreshDashboard]);
 
   function handlePortfolioSaved(savedPortfolio: Portfolio) {
     setPortfolio(savedPortfolio);
     // A manual position change is an observed strategy fact (for example, a
-    // user closing a position). Re-evaluate from completed daily candles.
-    void Promise.allSettled([api.strategy("BTC"), api.strategy("ETH")]).then((results) => {
-      const [btcStrategy, ethStrategy] = results;
-      if (btcStrategy.status === "fulfilled") setStrategy((current) => ({ ...current, BTC: btcStrategy.value }));
-      if (ethStrategy.status === "fulfilled") setStrategy((current) => ({ ...current, ETH: ethStrategy.value }));
-    });
+    // user closing a position), so refresh the entire advisory snapshot.
+    void refreshDashboard();
   }
 
   return (
@@ -71,7 +81,7 @@ export default function App() {
         <p className={connectionError ? "connection connection--error" : "connection"}>{connectionError ? `Data unavailable: ${connectionError}` : "Local API connected"}</p>
       </aside>
       <section className="content">
-        {page === "dashboard" && <DashboardPage portfolio={portfolio} market={market} strategy={strategy} isLoading={isDashboardLoading} />}
+        {page === "dashboard" && <DashboardPage isLoading={isDashboardLoading} lastRefreshedAt={lastDashboardRefresh} market={market} onRefresh={refreshDashboard} portfolio={portfolio} strategy={strategy} />}
         {page === "portfolio" && <PortfolioPage isLoading={isDashboardLoading} onSaved={handlePortfolioSaved} portfolio={portfolio} />}
         {page === "history" && <HistoryPage />}
         {page === "settings" && <StrategySettingsPage />}

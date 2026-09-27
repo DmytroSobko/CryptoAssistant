@@ -17,6 +17,12 @@ function percent(value: number | undefined): string {
   return `${value > 0 ? "+" : ""}${value.toFixed(1)}%`;
 }
 
+function timestamp(value: string | undefined): string {
+  if (!value) return "—";
+  const date = new Date(value);
+  return Number.isNaN(date.valueOf()) ? "—" : new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short" }).format(date);
+}
+
 function actionLabel(result: StrategyResult | null): string {
   if (!result) return "WAIT";
   if (result.action === "BUY" || result.action === "SELL_PROFIT" || result.action === "SELL_DRAWDOWN") {
@@ -40,7 +46,7 @@ export function AssetCard({ asset, position, market, strategy, isLoading }: Asse
         <span className={market ? "badge badge--ready" : "badge badge--muted"}>{status}</span>
       </div>
       <dl className="metrics">
-        <div><dt>Price</dt><dd>{currency(market?.price)}</dd></div>
+        <div><dt>Display price</dt><dd>{currency(market?.price)}</dd></div>
         <div><dt>Trend</dt><dd>{strategy?.trend ?? "—"}</dd></div>
         <div><dt>Strategy state</dt><dd>{strategy?.state ?? "—"}</dd></div>
         <div><dt>Position</dt><dd>{quantity} {asset}</dd></div>
@@ -49,10 +55,12 @@ export function AssetCard({ asset, position, market, strategy, isLoading }: Asse
         <div><dt>Local high</dt><dd>{strategy?.localHigh ? currency(strategy.localHigh) : "—"}</dd></div>
         <div><dt>Drawdown</dt><dd>{hasPosition && strategy ? percent(strategy.drawdownFromHighPct) : "—"}</dd></div>
       </dl>
+      <p className="market-timestamp">{market ? `Display price updated: ${timestamp(market.updatedAt)}` : "No display price has been loaded."}</p>
       <section className="signal">
         <span className="eyebrow">Current action</span>
         <strong className={actionClass}>{action}</strong>
         <p>{strategy?.reason ?? (isLoading ? "Loading market data and the deterministic strategy." : "Completed daily market data is not available yet.")}</p>
+        {strategy && strategy.price > 0 && <p><span className="muted">Decision basis:</span> {currency(strategy.price)} completed daily close.</p>}
         <p><span className="muted">Next trigger:</span> {strategy?.nextCondition ?? "Load completed daily candles."}</p>
       </section>
     </article>
