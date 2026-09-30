@@ -18,6 +18,9 @@ place orders, or execute trades.
   and allocation values.
 - Provides a dashboard, portfolio editor, history page, and independently
   configurable BTC and ETH strategy settings.
+- Provides a separate, local-only backtesting workspace. It imports immutable
+  BTC or ETH daily-candle CSV data and reports hypothetical strategy signals,
+  simulated fills, equity, drawdown, fees, and buy-and-hold comparison.
 
 ## Important decision rule
 
@@ -33,6 +36,8 @@ never substitutes an intraday price for a daily-candle strategy input.
   orchestration
 - `backend/internal/strategy/` — pure deterministic strategy code with no
   HTTP, SQLite, Tauri, React, provider, exchange, or AI dependencies
+- `backend/internal/backtest/` — pure historical simulator; it has no live
+  portfolio, SQLite, HTTP, provider, or UI dependency
 - `.documentation/` — MVP product specification
 
 ## Prerequisites
@@ -105,6 +110,76 @@ windows, trend mode, staged-entry totals, profit triggers, and ordered
 drawdown thresholds before saving. The API and storage layer independently
 enforce the same constraints.
 
+### Backtests
+
+The **Backtests** page is separate from the Dashboard and History. It imports
+one BTC or ETH historical candle set, runs one asset at a time, and saves a
+read-only result. A backtest never reads or changes the live portfolio, live
+strategy state, live advisory History, or live market snapshots.
+
+Choose a CSV file and give it a meaningful source label, such as `Coinbase
+daily export`. After import, select its date range, starting cash, fees,
+slippage, and a run-local copy of the strategy settings. Editing that copy
+does not save or overwrite the live BTC/ETH strategy configuration.
+
+Each result displays the data fingerprint, configuration snapshot, execution
+assumptions, summary metrics, daily-close equity curve, every signal, and
+every simulated trade. Rejected orders and end-of-data signals are retained in
+the audit trail rather than being hidden.
+
+#### Historical CSV format
+
+Version 1 accepts a single asset per canonical CSV file with this exact
+header:
+
+```csv
+timestamp,open,high,low,close,volume
+2022-01-01T00:00:00Z,47686.81,47759.63,46288.49,47733.43,196.0
+```
+
+Requirements:
+
+- Timestamps are RFC 3339 UTC midnight values, in strictly ascending order.
+- Every UTC day must be present. Duplicate, unsorted, or missing days are
+  rejected rather than filled in.
+- `open`, `high`, `low`, and `close` must be finite positive values with a
+  valid OHLC relationship. `volume` may be blank; when supplied it must be a
+  finite non-negative value.
+- At least 201 contiguous daily candles are required: 200 for SMA200 warm-up
+  and at least one decision candle.
+
+The import stores the original file's SHA-256, filename (without its local
+path), source label, schema version, range, and candle count. A run also saves
+a fingerprint of its selected candle values and range, so later data imports
+cannot revise its historical result.
+
+#### Simulation assumptions
+
+- Decisions use completed UTC daily candles only. The signal is evaluated at
+  the close of day `t`; an actionable signal is assumed filled at the open of
+  day `t+1`.
+- Starting position is cash only. Starting cash is required (the UI defaults
+  to USD 10,000).
+- Buys spend `ActionPct` of original starting cash, capped by available cash
+  after fees. Sells use `ActionPct` of the quantity held when filled.
+- Default fees are 10 bps per fill and default slippage is 5 bps per fill.
+  Buy fills use `next open × (1 + slippage)` and sell fills use `next open ×
+  (1 - slippage)`.
+- The simulator never borrows, margins, or creates a negative cash/coin
+  balance. Unfillable orders are recorded as rejected.
+- Equity is marked at each completed daily close. Taxes are excluded.
+- The current strategy engine stores and validates `ProfitTrigger2Pct`, but
+  does not implement it as a separate sell rule. The backtester reports that
+  behavior; it does not invent an additional trade.
+
+Example walkthrough: import a validated BTC daily CSV, select the imported
+set, leave the initial USD 10,000 / 10 bps / 5 bps defaults or enter explicit
+alternatives, set an in-range period with the required warm-up, then select
+**Run backtest**. Inspect the saved result's fingerprint, assumptions, signals
+and fills before comparing the reported return with buy-and-hold. These are
+hypothetical historical outcomes, not a performance claim or investment
+recommendation.
+
 ## API
 
 | Method | Route | Purpose |
@@ -116,6 +191,11 @@ enforce the same constraints.
 | `GET` | `/api/history` | Persisted actionable strategy events |
 | `GET` | `/api/config` | BTC and ETH strategy settings |
 | `PUT` | `/api/config/{asset}` | Validated settings for BTC or ETH |
+| `POST` | `/api/backtest/candle-sets` | Import a validated historical CSV as an immutable candle set |
+| `GET` | `/api/backtest/candle-sets?asset=BTC` | List imported BTC or ETH candle sets |
+| `POST` | `/api/backtests` | Run and save a synchronous hypothetical simulation |
+| `GET` | `/api/backtests` | List saved backtest summaries |
+| `GET` | `/api/backtests/{id}` | Retrieve one saved backtest and its audit data |
 
 ## Verification
 
@@ -146,7 +226,8 @@ npm run build
 - Local alerts and notifications are deferred.
 - Exchange/account integrations, autonomous trading, or order execution.
 - AI-generated signals or AI overrides of deterministic rules.
-- Backtesting and paper trading.
+- Paper trading, parameter optimisation, walk-forward analysis, or automated
+  "best settings" selection.
 - Manual transaction entry is not implemented; the app currently tracks the
   manually entered portfolio snapshot.
 
