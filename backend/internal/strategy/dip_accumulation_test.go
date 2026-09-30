@@ -1,0 +1,111 @@
+package strategy
+
+import (
+	"testing"
+	"time"
+
+	"github.com/dmytrosobko/crypto-strategy-assistant/backend/internal/market"
+	"github.com/dmytrosobko/crypto-strategy-assistant/backend/internal/portfolio"
+)
+
+func TestDipAccumulationUsesRecoveryForFirstEntryAndFixedReferenceForLaterEntries(t *testing.T) {
+	config := dipAccumulationConfig()
+	position := portfolio.Asset{Symbol: "BTC"}
+
+	_, correctionState := Evaluate(candleFixture([]float64{100, 120, 100, 90}), position, config, PersistedState{})
+	first, state := Evaluate(candleFixture([]float64{100, 120, 100, 80, 90, 85, 95, 96}), position, config, correctionState)
+	if first.Action != ActionBuy40 || state.EntryStep != 1 || state.FirstEntryReferencePrice != 96 || state.FirstEntryReferenceAt.IsZero() {
+		t.Fatalf("first entry=%+v state=%+v; want Entry 1 with a 96 signal reference", first, state)
+	}
+
+	position = portfolio.Asset{Symbol: "BTC", Quantity: 1, AverageEntryPrice: 96}
+	noEarly, state := Evaluate(dipCloseFixture(90, state.FirstEntryReferenceAt.AddDate(0, 0, 1)), position, config, state)
+	if noEarly.Action != ActionHold || state.EntryStep != 1 {
+		t.Fatalf("early entry result=%+v state=%+v; Entry 2 must wait for 86.40", noEarly, state)
+	}
+
+	second, state := Evaluate(dipCloseFixture(86.4, state.FirstEntryReferenceAt.AddDate(0, 0, 1)), position, config, state)
+	if second.Action != ActionBuy30 || second.ActionPct != 30 || state.EntryStep != 2 {
+		t.Fatalf("second entry=%+v state=%+v; want Entry 2 at 10%% below 96", second, state)
+	}
+
+	third, state := Evaluate(dipCloseFixture(76.8, state.LastDipEntryAt.AddDate(0, 0, 1)), position, config, state)
+	if third.Action != ActionBuy30Final || third.ActionPct != 30 || state.EntryStep != 3 || third.State != StateFullPosition {
+		t.Fatalf("third entry=%+v state=%+v; want Entry 3 at 20%% below 96", third, state)
+	}
+}
+
+func TestDipAccumulationGapThroughBothLevelsKeepsStageOrder(t *testing.T) {
+	config := dipAccumulationConfig()
+	state := PersistedState{Asset: "BTC", CurrentState: StatePartialPosition, EntryStep: 1, FirstEntryReferencePrice: 100}
+	position := portfolio.Asset{Symbol: "BTC", Quantity: 1, AverageEntryPrice: 100}
+
+	second, state := Evaluate(candleFixture([]float64{100, 75}), position, config, state)
+	if second.Action != ActionBuy30 || state.EntryStep != 2 {
+		t.Fatalf("first gap action=%+v state=%+v; want Entry 2 before Entry 3", second, state)
+	}
+	sameCandle, state := Evaluate(candleFixture([]float64{100, 75}), position, config, state)
+	if sameCandle.Action != ActionHold || state.EntryStep != 2 {
+		t.Fatalf("same-candle action=%+v state=%+v; it must not create a second buy", sameCandle, state)
+	}
+	third, state := Evaluate(dipCloseFixture(75, state.LastDipEntryAt.AddDate(0, 0, 1)), position, config, state)
+	if third.Action != ActionBuy30Final || state.EntryStep != 3 {
+		t.Fatalf("second gap action=%+v state=%+v; want Entry 3 on a later completed candle", third, state)
+	}
+}
+
+func TestDipAccumulationDoesNotInventReferenceForManualPosition(t *testing.T) {
+	config := dipAccumulationConfig()
+	position := portfolio.Asset{Symbol: "BTC", Quantity: 1, AverageEntryPrice: 100}
+	result, state := Evaluate(candleFixture([]float64{100, 90}), position, config, PersistedState{})
+	if result.Action != ActionHold || state.EntryStep != 0 || state.FirstEntryReferencePrice != 0 {
+		t.Fatalf("manual position result=%+v state=%+v; it must not invent dip entries", result, state)
+	}
+}
+
+func TestDipAccumulationResetsReferenceAfterPositionCloses(t *testing.T) {
+	config := dipAccumulationConfig()
+	prior := PersistedState{Asset: "BTC", CurrentState: StateFullPosition, PositionOpen: true, EntryStep: 3, FirstEntryReferencePrice: 100, FirstEntryReferenceAt: candleFixture([]float64{100})[0].Timestamp}
+	result, state := Evaluate(candleFixture([]float64{100, 90}), portfolio.Asset{Symbol: "BTC"}, config, prior)
+	if result.Action != ActionWait || state.EntryStep != 0 || state.FirstEntryReferencePrice != 0 || !state.FirstEntryReferenceAt.IsZero() {
+		t.Fatalf("closed position result=%+v state=%+v; reference must reset", result, state)
+	}
+}
+
+func TestDipAccumulationUsesCompletedCloseForDipEntry(t *testing.T) {
+	config := dipAccumulationConfig()
+	state := PersistedState{Asset: "BTC", CurrentState: StatePartialPosition, EntryStep: 1, FirstEntryReferencePrice: 100}
+	position := portfolio.Asset{Symbol: "BTC", Quantity: 1, AverageEntryPrice: 100}
+	candles := candleFixture([]float64{100, 95})
+	candles[len(candles)-1].Low = 80
+	result, next := Evaluate(candles, position, config, state)
+	if result.Action != ActionHold || next.EntryStep != 1 {
+		t.Fatalf("intraday low created a dip entry: result=%+v state=%+v", result, next)
+	}
+}
+
+func TestDipAccumulationResumesConfiguredDrawdownExitsAfterFinalEntry(t *testing.T) {
+	config := dipAccumulationConfig()
+	state := PersistedState{Asset: "BTC", CurrentState: StateFullPosition, EntryStep: 3, FirstEntryReferencePrice: 100, HighestPrice: 120, PositionOpen: true}
+	position := portfolio.Asset{Symbol: "BTC", Quantity: 1, AverageEntryPrice: 90}
+	result, next := Evaluate(candleFixture([]float64{100, 102}), position, config, state)
+	if result.Action != ActionSellDrawdown || result.ActionPct != config.Drawdown2SellPct || !next.Drawdown2Triggered {
+		t.Fatalf("post-entry drawdown result=%+v state=%+v; want the configured drawdown exit", result, next)
+	}
+}
+
+func dipAccumulationConfig() Config {
+	config := engineConfig(TrendModeOff)
+	config.StrategyID = StrategyDipAccumulation
+	config.Entry2DipFromFirstPct = 10
+	config.Entry3DipFromFirstPct = 20
+	config.EstimatedSellFeeBps = 10
+	config.BreakEvenExitFloorEnabled = true
+	return config
+}
+
+func dipCloseFixture(close float64, at time.Time) []market.Candle {
+	candles := candleFixture([]float64{100, close})
+	candles[len(candles)-1].Timestamp = at
+	return candles
+}

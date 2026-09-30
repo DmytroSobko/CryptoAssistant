@@ -90,6 +90,14 @@ type PersistedState struct {
 	HighestPrice float64 `json:"highestPrice"`
 	DrawdownPct  float64 `json:"drawdownPct"`
 
+	// FirstEntryReferencePrice is the completed-close price at which Dip
+	// Accumulation issued its first-entry advisory signal. The live advisor has
+	// no confirmed fill price, so this is deliberately a signal reference;
+	// the backtest will reconcile it to its simulated fill in Phase C.
+	FirstEntryReferencePrice float64   `json:"firstEntryReferencePrice"`
+	FirstEntryReferenceAt    time.Time `json:"firstEntryReferenceAt"`
+	LastDipEntryAt           time.Time `json:"lastDipEntryAt"`
+
 	CorrectionHighAt        time.Time `json:"correctionHighAt"`
 	LastBreakoutHighAt      time.Time `json:"lastBreakoutHighAt"`
 	LastBreakoutHigherLowAt time.Time `json:"lastBreakoutHigherLowAt"`
@@ -132,7 +140,7 @@ func Evaluate(candles []market.Candle, position portfolio.Asset, config Config, 
 	case StrategyRecoveryBreakout:
 		return evaluateRecoveryBreakout(candles, position, config, previous)
 	case StrategyDipAccumulation:
-		return evaluateDipAccumulationUnavailable(candles, position, config, previous)
+		return evaluateDipAccumulation(candles, position, config, previous)
 	default:
 		return unsupportedStrategyResult(candles, position, config, previous)
 	}
@@ -346,6 +354,9 @@ func resetForReentry(state PersistedState, at time.Time) PersistedState {
 	state.HigherLow = 0
 	state.HighestPrice = 0
 	state.DrawdownPct = 0
+	state.FirstEntryReferencePrice = 0
+	state.FirstEntryReferenceAt = time.Time{}
+	state.LastDipEntryAt = time.Time{}
 	state.CorrectionHighAt = time.Time{}
 	state.LastBreakoutHighAt = time.Time{}
 	state.LastBreakoutHigherLowAt = time.Time{}
