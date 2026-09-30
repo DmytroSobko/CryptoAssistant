@@ -11,6 +11,7 @@ import (
 
 	"github.com/dmytrosobko/crypto-strategy-assistant/backend/internal/backtest"
 	"github.com/dmytrosobko/crypto-strategy-assistant/backend/internal/market"
+	"github.com/dmytrosobko/crypto-strategy-assistant/backend/internal/strategy"
 )
 
 func TestBacktestingMigrationUpgradesAnExistingMVPDatabase(t *testing.T) {
@@ -111,6 +112,51 @@ func TestBacktestCandleSetDuplicateAndInvalidInputDoNotPersistRows(t *testing.T)
 	}
 }
 
+func TestBacktestRunRoundTripAndAssetMismatchAreIsolated(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "assistant.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if err := store.Migrate("../../migrations"); err != nil {
+		t.Fatal(err)
+	}
+	candles := backtestCandles(backtest.MinimumCandleCount)
+	set, err := store.ImportBacktestCandleSet(context.Background(), BacktestCandleSet{Asset: "BTC", SourceLabel: "test", SourceFilename: "btc.csv", OriginalSHA256: strings.Repeat("d", 64)}, candles)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := backtest.Request{Asset: "BTC", Start: candles[199].Timestamp, End: candles[200].Timestamp, StartingCashUSD: 1000, StrategyConfig: storageBacktestConfig(), FeeBps: 10, SlippageBps: 5, ExecutionModel: backtest.ExecutionModelNextDailyOpen}
+	result, err := backtest.Run(request, candles)
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved, err := store.SaveBacktestRun(context.Background(), set.ID, result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := store.GetBacktestRun(context.Background(), saved.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.CandleSetID != set.ID || !reflect.DeepEqual(loaded.Result, result) {
+		t.Fatalf("run round trip mismatch: loaded=%+v result=%+v", loaded, result)
+	}
+	list, err := store.ListBacktestRuns(context.Background(), 10)
+	if err != nil || len(list) != 1 || list[0].ID != saved.ID {
+		t.Fatalf("list runs: runs=%+v err=%v", list, err)
+	}
+	mismatch := result
+	mismatch.Request.Asset = "ETH"
+	if _, err := store.SaveBacktestRun(context.Background(), set.ID, mismatch); err == nil {
+		t.Fatal("expected candle-set asset mismatch")
+	}
+	list, err = store.ListBacktestRuns(context.Background(), 10)
+	if err != nil || len(list) != 1 {
+		t.Fatalf("failed run corrupted saved runs: runs=%+v err=%v", list, err)
+	}
+}
+
 func backtestCandles(count int) []market.Candle {
 	candles := make([]market.Candle, count)
 	for index := range candles {
@@ -118,4 +164,8 @@ func backtestCandles(count int) []market.Candle {
 		candles[index] = market.Candle{Timestamp: time.Date(2020, 1, 1+index, 0, 0, 0, 0, time.UTC), Open: price, High: price + 1, Low: price - 1, Close: price, Volume: 1}
 	}
 	return candles
+}
+
+func storageBacktestConfig() strategy.Config {
+	return strategy.Config{PullbackMinPct: 10, PivotLeft: 1, PivotRight: 1, TrendMode: strategy.TrendModeOff, Entry1Pct: 40, Entry2Pct: 30, Entry3Pct: 30, ProfitTrigger1Pct: 10, ProfitTrigger2Pct: 20, ProfitTakePct: 25, Drawdown1Pct: -10, Drawdown1SellPct: 20, Drawdown2Pct: -15, Drawdown2SellPct: 30, Drawdown3Pct: -20, Drawdown3SellPct: 70}
 }

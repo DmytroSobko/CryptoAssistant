@@ -3,10 +3,13 @@ package api
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,6 +18,132 @@ import (
 	"github.com/dmytrosobko/crypto-strategy-assistant/backend/internal/storage"
 	"github.com/dmytrosobko/crypto-strategy-assistant/backend/internal/strategy"
 )
+
+func TestBacktestEndpointsCreateAuditableRunWithoutChangingLiveResponses(t *testing.T) {
+	store, err := storage.Open(filepath.Join(t.TempDir(), "assistant.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+	if err := store.Migrate("../../migrations"); err != nil {
+		t.Fatal(err)
+	}
+	handler := NewServer(store, config.Config{}, nil).Routes()
+
+	portfolioBefore := serve(handler, http.MethodGet, "/api/portfolio", nil)
+	historyBefore := serve(handler, http.MethodGet, "/api/history", nil)
+	strategyBefore := serve(handler, http.MethodGet, "/api/strategy/BTC", nil)
+	if portfolioBefore.Code != http.StatusOK || historyBefore.Code != http.StatusOK || strategyBefore.Code != http.StatusOK {
+		t.Fatalf("unexpected live baseline responses: portfolio=%d history=%d strategy=%d", portfolioBefore.Code, historyBefore.Code, strategyBefore.Code)
+	}
+
+	importBody, err := json.Marshal(importBacktestCandleSetInput{Asset: "BTC", SourceLabel: "test fixture", SourceFilename: "btc-daily.csv", CSV: apiCSVFixture(201)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	imported := serve(handler, http.MethodPost, "/api/backtest/candle-sets", importBody)
+	if imported.Code != http.StatusCreated {
+		t.Fatalf("import status=%d body=%s", imported.Code, imported.Body.String())
+	}
+	var candleSet storage.BacktestCandleSet
+	if err := json.Unmarshal(imported.Body.Bytes(), &candleSet); err != nil {
+		t.Fatal(err)
+	}
+
+	start := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC).AddDate(0, 0, 199)
+	runBody, err := json.Marshal(createBacktestInput{CandleSetID: candleSet.ID, Asset: "BTC", Start: start, End: start.AddDate(0, 0, 1), StartingCashUSD: 10000, StrategyConfig: apiBacktestConfig(), FeeBps: 10, SlippageBps: 5, ExecutionModel: "NEXT_DAILY_OPEN"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	created := serve(handler, http.MethodPost, "/api/backtests", runBody)
+	if created.Code != http.StatusCreated || !bytes.Contains(created.Body.Bytes(), []byte(`"dataFingerprint"`)) {
+		t.Fatalf("run status=%d body=%s", created.Code, created.Body.String())
+	}
+	var run storage.BacktestRun
+	if err := json.Unmarshal(created.Body.Bytes(), &run); err != nil {
+		t.Fatal(err)
+	}
+	if run.ID == "" || run.Result.Summary.SignalCount != 2 {
+		t.Fatalf("unexpected created run: %+v", run)
+	}
+	unknownBody, err := json.Marshal(createBacktestInput{CandleSetID: "missing-set", Asset: "BTC", Start: start, End: start.AddDate(0, 0, 1), StartingCashUSD: 10000, StrategyConfig: apiBacktestConfig(), FeeBps: 10, SlippageBps: 5, ExecutionModel: "NEXT_DAILY_OPEN"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	unknown := serve(handler, http.MethodPost, "/api/backtests", unknownBody)
+	if unknown.Code != http.StatusNotFound {
+		t.Fatalf("unknown candle set status=%d body=%s", unknown.Code, unknown.Body.String())
+	}
+	mismatchBody, err := json.Marshal(createBacktestInput{CandleSetID: candleSet.ID, Asset: "ETH", Start: start, End: start.AddDate(0, 0, 1), StartingCashUSD: 10000, StrategyConfig: apiBacktestConfig(), FeeBps: 10, SlippageBps: 5, ExecutionModel: "NEXT_DAILY_OPEN"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mismatch := serve(handler, http.MethodPost, "/api/backtests", mismatchBody)
+	if mismatch.Code != http.StatusBadRequest {
+		t.Fatalf("asset mismatch status=%d body=%s", mismatch.Code, mismatch.Body.String())
+	}
+
+	listed := serve(handler, http.MethodGet, "/api/backtests", nil)
+	if listed.Code != http.StatusOK || !bytes.Contains(listed.Body.Bytes(), []byte(run.ID)) {
+		t.Fatalf("list status=%d body=%s", listed.Code, listed.Body.String())
+	}
+	detail := serve(handler, http.MethodGet, "/api/backtests/"+run.ID, nil)
+	if detail.Code != http.StatusOK || !bytes.Contains(detail.Body.Bytes(), []byte(`"equityCurve"`)) {
+		t.Fatalf("detail status=%d body=%s", detail.Code, detail.Body.String())
+	}
+	missing := serve(handler, http.MethodGet, "/api/backtests/not-a-run", nil)
+	if missing.Code != http.StatusNotFound {
+		t.Fatalf("missing run status=%d body=%s", missing.Code, missing.Body.String())
+	}
+
+	portfolioAfter := serve(handler, http.MethodGet, "/api/portfolio", nil)
+	historyAfter := serve(handler, http.MethodGet, "/api/history", nil)
+	strategyAfter := serve(handler, http.MethodGet, "/api/strategy/BTC", nil)
+	if !bytes.Equal(portfolioBefore.Body.Bytes(), portfolioAfter.Body.Bytes()) || !bytes.Equal(historyBefore.Body.Bytes(), historyAfter.Body.Bytes()) || !bytes.Equal(strategyBefore.Body.Bytes(), strategyAfter.Body.Bytes()) {
+		t.Fatalf("backtest changed live responses:\nportfolio %s -> %s\nhistory %s -> %s\nstrategy %s -> %s", portfolioBefore.Body.String(), portfolioAfter.Body.String(), historyBefore.Body.String(), historyAfter.Body.String(), strategyBefore.Body.String(), strategyAfter.Body.String())
+	}
+}
+
+func TestBacktestEndpointsRejectBadInputAndOversizedCSV(t *testing.T) {
+	handler := newTestHandler(t)
+	invalid := serve(handler, http.MethodPost, "/api/backtest/candle-sets", []byte(`{"asset":"DOGE","sourceLabel":"x","sourceFilename":"x.csv","csv":"timestamp,open,high,low,close,volume"}`))
+	if invalid.Code != http.StatusBadRequest {
+		t.Fatalf("invalid asset status=%d body=%s", invalid.Code, invalid.Body.String())
+	}
+	over := importBacktestCandleSetInput{Asset: "BTC", SourceLabel: "x", SourceFilename: "x.csv", CSV: strings.Repeat("x", maxBacktestCSVBytes+1)}
+	body, err := json.Marshal(over)
+	if err != nil {
+		t.Fatal(err)
+	}
+	overResponse := serve(handler, http.MethodPost, "/api/backtest/candle-sets", body)
+	if overResponse.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("oversized CSV status=%d body=%s", overResponse.Code, overResponse.Body.String())
+	}
+}
+
+func serve(handler http.Handler, method, path string, body []byte) *httptest.ResponseRecorder {
+	request := httptest.NewRequest(method, path, bytes.NewReader(body))
+	if body != nil {
+		request.Header.Set("Content-Type", "application/json")
+	}
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	return response
+}
+
+func apiCSVFixture(count int) string {
+	var builder strings.Builder
+	builder.WriteString("timestamp,open,high,low,close,volume\n")
+	for index := 0; index < count; index++ {
+		price := 100 + index
+		fmt.Fprintf(&builder, "%s,%d,%d,%d,%d,1\n", time.Date(2020, 1, 1+index, 0, 0, 0, 0, time.UTC).Format(time.RFC3339), price, price+1, price-1, price)
+	}
+	return builder.String()
+}
+
+func apiBacktestConfig() strategy.Config {
+	return strategy.Config{PullbackMinPct: 10, PivotLeft: 1, PivotRight: 1, TrendMode: strategy.TrendModeOff, Entry1Pct: 40, Entry2Pct: 30, Entry3Pct: 30, ProfitTrigger1Pct: 10, ProfitTrigger2Pct: 20, ProfitTakePct: 25, Drawdown1Pct: -10, Drawdown1SellPct: 20, Drawdown2Pct: -15, Drawdown2SellPct: 30, Drawdown3Pct: -20, Drawdown3SellPct: 70}
+}
 
 func newTestHandler(t *testing.T) http.Handler {
 	t.Helper()

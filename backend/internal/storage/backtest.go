@@ -17,6 +17,8 @@ import (
 
 const backtestCandleSchemaVersion = 1
 
+var ErrBacktestCandleSetDuplicate = errors.New("backtest candle set already exists")
+
 // BacktestCandleSet describes an immutable imported historical data set. It
 // intentionally has no relationship to the live market_snapshots table.
 type BacktestCandleSet struct {
@@ -58,7 +60,7 @@ func (s *Store) ImportBacktestCandleSet(ctx context.Context, set BacktestCandleS
 	defer tx.Rollback()
 	if _, err := tx.ExecContext(ctx, `INSERT INTO backtest_candle_sets(id, asset, source_label, source_filename, original_sha256, schema_version, candle_count, first_timestamp, last_timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, set.ID, set.Asset, set.SourceLabel, set.SourceFilename, set.OriginalSHA256, set.SchemaVersion, set.CandleCount, databaseTime(set.FirstTimestamp), databaseTime(set.LastTimestamp)); err != nil {
 		if isUniqueConstraint(err) {
-			return BacktestCandleSet{}, fmt.Errorf("backtest candle set with this original SHA-256 already exists")
+			return BacktestCandleSet{}, fmt.Errorf("%w: original SHA-256", ErrBacktestCandleSetDuplicate)
 		}
 		return BacktestCandleSet{}, fmt.Errorf("insert backtest candle set: %w", err)
 	}

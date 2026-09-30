@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dmytrosobko/crypto-strategy-assistant/backend/internal/backtestservice"
 	"github.com/dmytrosobko/crypto-strategy-assistant/backend/internal/config"
 	"github.com/dmytrosobko/crypto-strategy-assistant/backend/internal/portfolio"
 	"github.com/dmytrosobko/crypto-strategy-assistant/backend/internal/storage"
@@ -29,10 +30,11 @@ type Server struct {
 	cfg             config.Config
 	marketRefresher MarketRefresher
 	strategyService *strategyservice.Service
+	backtestService *backtestservice.Service
 }
 
 func NewServer(store *storage.Store, cfg config.Config, marketRefresher MarketRefresher) *Server {
-	return &Server{store: store, cfg: cfg, marketRefresher: marketRefresher, strategyService: strategyservice.New(store)}
+	return &Server{store: store, cfg: cfg, marketRefresher: marketRefresher, strategyService: strategyservice.New(store), backtestService: backtestservice.New(store)}
 }
 
 func (s *Server) Routes() http.Handler {
@@ -46,6 +48,11 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /api/history", s.handleHistory)
 	mux.HandleFunc("GET /api/config", s.handleGetConfig)
 	mux.HandleFunc("PUT /api/config/{asset}", s.handlePutConfig)
+	mux.HandleFunc("POST /api/backtest/candle-sets", s.handleImportBacktestCandleSet)
+	mux.HandleFunc("GET /api/backtest/candle-sets", s.handleListBacktestCandleSets)
+	mux.HandleFunc("POST /api/backtests", s.handleCreateBacktest)
+	mux.HandleFunc("GET /api/backtests", s.handleListBacktests)
+	mux.HandleFunc("GET /api/backtests/{id}", s.handleGetBacktest)
 	return withCORS(withLogging(mux))
 }
 
@@ -175,7 +182,11 @@ func validAsset(asset string) (string, bool) {
 }
 
 func decodeJSON(r *http.Request, target any) error {
-	decoder := json.NewDecoder(http.MaxBytesReader(nil, r.Body, 1<<20))
+	return decodeJSONLimit(r, target, 1<<20)
+}
+
+func decodeJSONLimit(r *http.Request, target any, maxBytes int64) error {
+	decoder := json.NewDecoder(http.MaxBytesReader(nil, r.Body, maxBytes))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); err != nil {
 		return err
