@@ -5,6 +5,23 @@ import "fmt"
 // ValidateConfig verifies that every persisted strategy setting can be used by
 // the deterministic engine without creating impossible entry or exit rules.
 func ValidateConfig(config Config) error {
+	strategyID := config.ResolvedStrategyID()
+	if !validStrategyID(strategyID) {
+		return fmt.Errorf("strategy ID must be %s or %s", StrategyRecoveryBreakout, StrategyDipAccumulation)
+	}
+	if err := validateSharedConfig(config); err != nil {
+		return err
+	}
+	if strategyID == StrategyDipAccumulation {
+		return validateDipAccumulationConfig(config)
+	}
+	return nil
+}
+
+// validateSharedConfig is deliberately the original Recovery Breakout
+// validation. Keeping it separate guards the MVP configuration semantics as
+// more strategy-specific fields are introduced.
+func validateSharedConfig(config Config) error {
 	if !validPositivePercentage(config.PullbackMinPct) {
 		return fmt.Errorf("pullback minimum must be greater than 0 and at most 100")
 	}
@@ -66,6 +83,25 @@ func ValidateConfig(config Config) error {
 	}
 	if !(config.Drawdown1Pct > config.Drawdown2Pct && config.Drawdown2Pct > config.Drawdown3Pct) {
 		return fmt.Errorf("drawdown thresholds must become progressively deeper")
+	}
+	return nil
+}
+
+func validateDipAccumulationConfig(config Config) error {
+	if !validPositivePercentage(config.Entry2DipFromFirstPct) {
+		return fmt.Errorf("entry 2 dip from first entry must be greater than 0 and at most 100")
+	}
+	if !validPositivePercentage(config.Entry3DipFromFirstPct) {
+		return fmt.Errorf("entry 3 dip from first entry must be greater than 0 and at most 100")
+	}
+	if config.Entry3DipFromFirstPct <= config.Entry2DipFromFirstPct {
+		return fmt.Errorf("entry 3 dip from first entry must be greater than entry 2 dip")
+	}
+	if isNaNOrInf(config.EstimatedSellFeeBps) || config.EstimatedSellFeeBps < 0 || config.EstimatedSellFeeBps >= 10000 {
+		return fmt.Errorf("estimated sell fee must be at least 0 and below 10000 bps")
+	}
+	if !config.BreakEvenExitFloorEnabled {
+		return fmt.Errorf("dip accumulation requires the break-even exit floor")
 	}
 	return nil
 }

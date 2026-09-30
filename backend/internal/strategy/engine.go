@@ -40,24 +40,43 @@ const (
 	StateWaitingForReentry State = "WAITING_FOR_REENTRY"
 )
 
+// StrategyID identifies one deterministic ruleset. An omitted ID is retained
+// as a backwards-compatible spelling of Recovery Breakout for configurations
+// written before strategy selection existed.
+type StrategyID string
+
+const (
+	StrategyRecoveryBreakout StrategyID = "RECOVERY_BREAKOUT"
+	StrategyDipAccumulation  StrategyID = "DIP_ACCUMULATION"
+)
+
 type Config struct {
-	PullbackMinPct    float64 `json:"pullbackMinPct"`
-	PivotLeft         int     `json:"pivotLeft"`
-	PivotRight        int     `json:"pivotRight"`
-	BreakoutBufferPct float64 `json:"breakoutBufferPct"`
-	TrendMode         string  `json:"trendMode"`
-	Entry1Pct         float64 `json:"entry1Pct"`
-	Entry2Pct         float64 `json:"entry2Pct"`
-	Entry3Pct         float64 `json:"entry3Pct"`
-	ProfitTrigger1Pct float64 `json:"profitTrigger1Pct"`
-	ProfitTrigger2Pct float64 `json:"profitTrigger2Pct"`
-	ProfitTakePct     float64 `json:"profitTakePct"`
-	Drawdown1Pct      float64 `json:"drawdown1Pct"`
-	Drawdown1SellPct  float64 `json:"drawdown1SellPct"`
-	Drawdown2Pct      float64 `json:"drawdown2Pct"`
-	Drawdown2SellPct  float64 `json:"drawdown2SellPct"`
-	Drawdown3Pct      float64 `json:"drawdown3Pct"`
-	Drawdown3SellPct  float64 `json:"drawdown3SellPct"`
+	StrategyID        StrategyID `json:"strategyId,omitempty"`
+	PullbackMinPct    float64    `json:"pullbackMinPct"`
+	PivotLeft         int        `json:"pivotLeft"`
+	PivotRight        int        `json:"pivotRight"`
+	BreakoutBufferPct float64    `json:"breakoutBufferPct"`
+	TrendMode         string     `json:"trendMode"`
+	Entry1Pct         float64    `json:"entry1Pct"`
+	Entry2Pct         float64    `json:"entry2Pct"`
+	Entry3Pct         float64    `json:"entry3Pct"`
+	ProfitTrigger1Pct float64    `json:"profitTrigger1Pct"`
+	ProfitTrigger2Pct float64    `json:"profitTrigger2Pct"`
+	ProfitTakePct     float64    `json:"profitTakePct"`
+	Drawdown1Pct      float64    `json:"drawdown1Pct"`
+	Drawdown1SellPct  float64    `json:"drawdown1SellPct"`
+	Drawdown2Pct      float64    `json:"drawdown2Pct"`
+	Drawdown2SellPct  float64    `json:"drawdown2SellPct"`
+	Drawdown3Pct      float64    `json:"drawdown3Pct"`
+	Drawdown3SellPct  float64    `json:"drawdown3SellPct"`
+
+	// Dip Accumulation fields are intentionally inert for Recovery Breakout.
+	// Their rules are added in Phase B; defining them now makes profiles and
+	// persisted snapshots forward-compatible without changing the legacy path.
+	Entry2DipFromFirstPct     float64 `json:"entry2DipFromFirstPct,omitempty"`
+	Entry3DipFromFirstPct     float64 `json:"entry3DipFromFirstPct,omitempty"`
+	EstimatedSellFeeBps       float64 `json:"estimatedSellFeeBps,omitempty"`
+	BreakEvenExitFloorEnabled bool    `json:"breakEvenExitFloorEnabled,omitempty"`
 }
 
 // PersistedState contains only facts needed to make a subsequent evaluation
@@ -105,14 +124,28 @@ type Engine interface {
 	Evaluate(candles []market.Candle, position portfolio.Asset, config Config, state PersistedState) (Result, PersistedState)
 }
 
-// Evaluate derives one advisory action from completed daily candles. It never
-// mutates a portfolio: returned actions are recommendations, while the caller
-// is responsible for persisting both the portfolio and next state.
+// Evaluate dispatches to the deterministic ruleset selected in config. It
+// never mutates a portfolio: returned actions are recommendations, while the
+// caller is responsible for persisting both the portfolio and next state.
+func Evaluate(candles []market.Candle, position portfolio.Asset, config Config, previous PersistedState) (Result, PersistedState) {
+	switch config.ResolvedStrategyID() {
+	case StrategyRecoveryBreakout:
+		return evaluateRecoveryBreakout(candles, position, config, previous)
+	case StrategyDipAccumulation:
+		return evaluateDipAccumulationUnavailable(candles, position, config, previous)
+	default:
+		return unsupportedStrategyResult(candles, position, config, previous)
+	}
+}
+
+// evaluateRecoveryBreakout is the original MVP evaluator. Keeping it as a
+// dedicated implementation makes dispatch explicit while preserving its
+// behaviour for all existing configurations and persisted state.
 //
 // A staged entry consumes one distinct confirmed recovery breakout. This is
 // deliberately stricter than treating every later close above the same level
 // as a new entry; the latter would create duplicate daily recommendations.
-func Evaluate(candles []market.Candle, position portfolio.Asset, config Config, previous PersistedState) (Result, PersistedState) {
+func evaluateRecoveryBreakout(candles []market.Candle, position portfolio.Asset, config Config, previous PersistedState) (Result, PersistedState) {
 	state := previous
 	state.Asset = assetFor(position, state)
 	if state.CurrentState == "" {

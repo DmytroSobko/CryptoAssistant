@@ -1,10 +1,30 @@
 package strategy
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/dmytrosobko/crypto-strategy-assistant/backend/internal/portfolio"
 )
+
+func TestEvaluateDispatchPreservesRecoveryBreakoutBehavior(t *testing.T) {
+	config := engineConfig(TrendModeOff)
+	previous := PersistedState{PositionOpen: true, EntryStep: 3, HighestPrice: 120, ProfitTaken: true}
+	candles := candleFixture([]float64{100, 108})
+	position := portfolio.Asset{Symbol: "BTC", Quantity: 1, AverageEntryPrice: 100}
+
+	wantResult, wantState := evaluateRecoveryBreakout(candles, position, config, previous)
+	gotResult, gotState := Evaluate(candles, position, config, previous)
+	if !reflect.DeepEqual(gotResult, wantResult) || !reflect.DeepEqual(gotState, wantState) {
+		t.Fatalf("implicit legacy recovery dispatch changed behavior:\n got result=%+v state=%+v\nwant result=%+v state=%+v", gotResult, gotState, wantResult, wantState)
+	}
+
+	config.StrategyID = StrategyRecoveryBreakout
+	gotResult, gotState = Evaluate(candles, position, config, previous)
+	if !reflect.DeepEqual(gotResult, wantResult) || !reflect.DeepEqual(gotState, wantState) {
+		t.Fatalf("explicit recovery dispatch changed behavior:\n got result=%+v state=%+v\nwant result=%+v state=%+v", gotResult, gotState, wantResult, wantState)
+	}
+}
 
 func TestEvaluateFixtureDrivenEntryTransitions(t *testing.T) {
 	config := engineConfig(TrendModeOff)
