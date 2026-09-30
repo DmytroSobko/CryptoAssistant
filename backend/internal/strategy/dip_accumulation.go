@@ -68,11 +68,23 @@ func evaluateDipAccumulation(candles []market.Candle, position portfolio.Asset, 
 		}
 
 		if sellPct, level, triggered := drawdownAction(config, state.DrawdownPct, state); triggered {
+			floorNet, floorGross := dipBreakEvenFloor(config, position.AverageEntryPrice)
+			if floorNet > 0 && price*(1-config.EstimatedSellFeeBps/10000) < floorNet {
+				state.CurrentState = dipHoldingState(state)
+				result.BreakEvenFloorNetPrice = floorNet
+				result.BreakEvenFloorGrossPrice = floorGross
+				return holdResult(result, state, config,
+					fmt.Sprintf("Drawdown exit withheld: the %.2f completed close is below the estimated break-even sale floor of %.2f.", price, floorGross),
+					fmt.Sprintf("Hold until a completed close supports a sale at or above %.2f before fees.", floorGross)), state
+			}
 			state = markDrawdownTriggered(state, level)
 			state.CurrentState = StateExiting
-			return actionResult(result, state, config, ActionSellDrawdown, sellPct,
+			result = actionResult(result, state, config, ActionSellDrawdown, sellPct,
 				fmt.Sprintf("Completed daily close is %.2f%% below the %.2f high-water mark.", -state.DrawdownPct, state.HighestPrice),
-				"Update the manually managed position after any sale."), state
+				"Update the manually managed position after any sale.")
+			result.BreakEvenFloorNetPrice = floorNet
+			result.BreakEvenFloorGrossPrice = floorGross
+			return result, state
 		}
 
 		if !state.ProfitTaken && finitePositive(position.AverageEntryPrice) && validPositivePercentage(config.ProfitTakePct) &&
@@ -201,6 +213,24 @@ func dipForStep(config Config, step int) float64 {
 	default:
 		return 0
 	}
+}
+
+func dipBreakEvenFloor(config Config, averageEntryPrice float64) (netFloor, grossFloor float64) {
+	if !config.BreakEvenExitFloorEnabled || !finitePositive(averageEntryPrice) {
+		return 0, 0
+	}
+	feeRate := config.EstimatedSellFeeBps / 10000
+	if feeRate < 0 || feeRate >= 1 {
+		return 0, 0
+	}
+	return averageEntryPrice, averageEntryPrice / (1 - feeRate)
+}
+
+func dipHoldingState(state PersistedState) State {
+	if state.EntryStep >= 3 {
+		return StateFullPosition
+	}
+	return StatePartialPosition
 }
 
 func unsupportedStrategyResult(candles []market.Candle, position portfolio.Asset, config Config, previous PersistedState) (Result, PersistedState) {

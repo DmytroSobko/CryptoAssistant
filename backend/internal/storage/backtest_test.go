@@ -131,6 +131,10 @@ func TestBacktestRunRoundTripAndAssetMismatchAreIsolated(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The simulator normally sets this on protected Dip Accumulation exits.
+	// Populate it here to verify the nullable audit column survives a complete
+	// storage round-trip independently of a particular market fixture.
+	result.Signals[0].BreakEvenFloorNetPrice = 123.45
 	saved, err := store.SaveBacktestRun(context.Background(), set.ID, result)
 	if err != nil {
 		t.Fatal(err)

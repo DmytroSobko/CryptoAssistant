@@ -33,7 +33,8 @@ func execute(order PendingOrder, candle market.Candle, state *SimulationState, r
 		Sequence: sequence, SignalSequence: order.SignalSequence, SignalTimestamp: order.SignalTimestamp,
 		ExecutionTimestamp: candle.Timestamp, Side: side, Action: order.Action, RequestedPct: order.ActionPct,
 		RawOpenPrice: candle.Open, CashAfterUSD: state.CashUSD, QuantityAfter: state.Position.Quantity,
-		AverageEntryAfter: state.Position.AverageEntryPrice,
+		AverageEntryAfter:      state.Position.AverageEntryPrice,
+		BreakEvenFloorNetPrice: order.BreakEvenFloorNetPrice,
 	}
 	slippage := request.SlippageBps / 10000
 	feeRate := request.FeeBps / 10000
@@ -78,6 +79,11 @@ func executeSell(trade Trade, state *SimulationState, feeRate float64) Trade {
 	if quantity <= epsilon {
 		trade.Status = "REJECTED_INSUFFICIENT_QUANTITY"
 		trade.Reason = "The simulated sale quantity is zero."
+		return trade
+	}
+	if trade.BreakEvenFloorNetPrice > epsilon && trade.FillPrice*(1-feeRate) < trade.BreakEvenFloorNetPrice-epsilon {
+		trade.Status = "REJECTED_BREAK_EVEN_FLOOR"
+		trade.Reason = fmt.Sprintf("Simulated net sale price %.8f is below the break-even floor %.8f.", trade.FillPrice*(1-feeRate), trade.BreakEvenFloorNetPrice)
 		return trade
 	}
 	gross := quantity * trade.FillPrice

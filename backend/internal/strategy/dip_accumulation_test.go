@@ -94,6 +94,25 @@ func TestDipAccumulationResumesConfiguredDrawdownExitsAfterFinalEntry(t *testing
 	}
 }
 
+func TestDipAccumulationBreakEvenFloorBlocksBelowCostDrawdownExit(t *testing.T) {
+	config := dipAccumulationConfig()
+	state := PersistedState{Asset: "BTC", CurrentState: StateFullPosition, EntryStep: 3, FirstEntryReferencePrice: 100, HighestPrice: 120, PositionOpen: true}
+	position := portfolio.Asset{Symbol: "BTC", Quantity: 1, AverageEntryPrice: 100}
+	result, next := Evaluate(candleFixture([]float64{100, 99}), position, config, state)
+	if result.Action != ActionHold || result.BreakEvenFloorNetPrice != 100 || result.BreakEvenFloorGrossPrice <= 100 || next.Drawdown1Triggered {
+		t.Fatalf("below-cost drawdown result=%+v state=%+v; expected protected hold", result, next)
+	}
+}
+
+func TestReconcileRejectedProtectedDrawdownRestoresOnlyDrawdownTriggers(t *testing.T) {
+	previous := PersistedState{HighestPrice: 120, Drawdown1Triggered: true}
+	candidate := PersistedState{HighestPrice: 120, Drawdown1Triggered: true, Drawdown2Triggered: true, Drawdown3Triggered: true, CurrentState: StateExiting}
+	got := ReconcileRejectedProtectedDrawdown(previous, candidate)
+	if got.HighestPrice != 120 || !got.Drawdown1Triggered || got.Drawdown2Triggered || got.Drawdown3Triggered {
+		t.Fatalf("reconciled state=%+v", got)
+	}
+}
+
 func dipAccumulationConfig() Config {
 	config := engineConfig(TrendModeOff)
 	config.StrategyID = StrategyDipAccumulation

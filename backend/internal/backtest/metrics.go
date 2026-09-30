@@ -36,6 +36,9 @@ func buildSummary(result *Result, candles []market.Candle, startIndex, endIndex 
 			summary.ExecutedTradeCount++
 		} else {
 			summary.RejectedTradeCount++
+			if trade.Status == "REJECTED_BREAK_EVEN_FLOOR" {
+				summary.BreakEvenFloorBlockedTradeCount++
+			}
 		}
 	}
 	for _, signal := range result.Signals {

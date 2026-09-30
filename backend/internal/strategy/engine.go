@@ -123,8 +123,13 @@ type Result struct {
 	LocalHigh           float64 `json:"localHigh"`
 	LocalLow            float64 `json:"localLow"`
 	DrawdownFromHighPct float64 `json:"drawdownFromHighPct"`
-	Reason              string  `json:"reason"`
-	NextCondition       string  `json:"nextCondition"`
+	// BreakEvenFloorNetPrice is the minimum net sale proceeds per coin for a
+	// protected Dip Accumulation drawdown exit. It equals the current weighted
+	// average entry price and is zero for the legacy strategy.
+	BreakEvenFloorNetPrice   float64 `json:"breakEvenFloorNetPrice,omitempty"`
+	BreakEvenFloorGrossPrice float64 `json:"breakEvenFloorGrossPrice,omitempty"`
+	Reason                   string  `json:"reason"`
+	NextCondition            string  `json:"nextCondition"`
 }
 
 // Engine is a small seam for callers that prefer dependency injection.
@@ -368,6 +373,39 @@ func resetForReentry(state PersistedState, at time.Time) PersistedState {
 	state.Drawdown3Triggered = false
 	state.PositionOpen = false
 	return state
+}
+
+// ReconcileRejectedProtectedDrawdown retains market facts learned while a
+// protected exit was signaled, but makes the drawdown levels available again
+// when the conditional backtest order could not meet its floor at the next
+// open. It is pure so the simulator can safely use it without importing
+// storage or live-advisory concerns.
+func ReconcileRejectedProtectedDrawdown(previous, candidate PersistedState) PersistedState {
+	candidate.Drawdown1Triggered = previous.Drawdown1Triggered
+	candidate.Drawdown2Triggered = previous.Drawdown2Triggered
+	candidate.Drawdown3Triggered = previous.Drawdown3Triggered
+	return candidate
+}
+
+// ReconcileSimulatedFirstEntryFill replaces the live advisor's Entry 1 signal
+// reference with the actual simulated next-open fill. It affects only Dip
+// Accumulation backtests; Recovery Breakout remains unchanged.
+func ReconcileSimulatedFirstEntryFill(config Config, state PersistedState, action Action, fillPrice float64, filledAt time.Time) PersistedState {
+	if config.ResolvedStrategyID() != StrategyDipAccumulation || !isBuyAction(action) || state.EntryStep != 1 || !finitePositive(fillPrice) {
+		return state
+	}
+	state.FirstEntryReferencePrice = fillPrice
+	state.FirstEntryReferenceAt = filledAt
+	return state
+}
+
+func isBuyAction(action Action) bool {
+	switch action {
+	case ActionBuy, ActionBuy40, ActionBuy30, ActionBuy30Final:
+		return true
+	default:
+		return false
+	}
 }
 
 func (config Config) entryPct(step int) float64 {

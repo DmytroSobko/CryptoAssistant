@@ -197,13 +197,13 @@ func (s *Store) ListBacktestRuns(ctx context.Context, limit int) ([]BacktestRunS
 }
 
 func insertBacktestSignals(ctx context.Context, tx *sql.Tx, runID string, signals []backtest.Signal) error {
-	statement, err := tx.PrepareContext(ctx, `INSERT INTO backtest_signals(run_id, sequence, timestamp, decision_close, action, action_pct, strategy_state, reason, next_condition, order_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+	statement, err := tx.PrepareContext(ctx, `INSERT INTO backtest_signals(run_id, sequence, timestamp, decision_close, action, action_pct, strategy_state, reason, next_condition, order_status, break_even_floor_net_price) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return fmt.Errorf("prepare backtest signals: %w", err)
 	}
 	defer statement.Close()
 	for _, signal := range signals {
-		if _, err := statement.ExecContext(ctx, runID, signal.Sequence, databaseTime(signal.Timestamp), signal.DecisionClose, signal.Action, signal.ActionPct, signal.StrategyState, signal.Reason, signal.NextCondition, signal.OrderStatus); err != nil {
+		if _, err := statement.ExecContext(ctx, runID, signal.Sequence, databaseTime(signal.Timestamp), signal.DecisionClose, signal.Action, signal.ActionPct, signal.StrategyState, signal.Reason, signal.NextCondition, signal.OrderStatus, nullableFloat(signal.BreakEvenFloorNetPrice)); err != nil {
 			return fmt.Errorf("insert backtest signal: %w", err)
 		}
 	}
@@ -211,13 +211,13 @@ func insertBacktestSignals(ctx context.Context, tx *sql.Tx, runID string, signal
 }
 
 func insertBacktestTrades(ctx context.Context, tx *sql.Tx, runID string, trades []backtest.Trade) error {
-	statement, err := tx.PrepareContext(ctx, `INSERT INTO backtest_trades(run_id, sequence, signal_sequence, signal_timestamp, execution_timestamp, side, action, requested_pct, status, raw_open_price, fill_price, quantity, gross_notional_usd, fee_usd, cash_after_usd, quantity_after, average_entry_after, reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+	statement, err := tx.PrepareContext(ctx, `INSERT INTO backtest_trades(run_id, sequence, signal_sequence, signal_timestamp, execution_timestamp, side, action, requested_pct, status, raw_open_price, fill_price, quantity, gross_notional_usd, fee_usd, cash_after_usd, quantity_after, average_entry_after, reason, break_even_floor_net_price) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return fmt.Errorf("prepare backtest trades: %w", err)
 	}
 	defer statement.Close()
 	for _, trade := range trades {
-		if _, err := statement.ExecContext(ctx, runID, trade.Sequence, trade.SignalSequence, databaseTime(trade.SignalTimestamp), nullableTime(trade.ExecutionTimestamp), trade.Side, trade.Action, trade.RequestedPct, trade.Status, nullableFloat(trade.RawOpenPrice), nullableFloat(trade.FillPrice), trade.Quantity, trade.GrossNotionalUSD, trade.FeeUSD, trade.CashAfterUSD, trade.QuantityAfter, trade.AverageEntryAfter, trade.Reason); err != nil {
+		if _, err := statement.ExecContext(ctx, runID, trade.Sequence, trade.SignalSequence, databaseTime(trade.SignalTimestamp), nullableTime(trade.ExecutionTimestamp), trade.Side, trade.Action, trade.RequestedPct, trade.Status, nullableFloat(trade.RawOpenPrice), nullableFloat(trade.FillPrice), trade.Quantity, trade.GrossNotionalUSD, trade.FeeUSD, trade.CashAfterUSD, trade.QuantityAfter, trade.AverageEntryAfter, trade.Reason, nullableFloat(trade.BreakEvenFloorNetPrice)); err != nil {
 			return fmt.Errorf("insert backtest trade: %w", err)
 		}
 	}
@@ -267,10 +267,16 @@ func validateBacktestResult(result backtest.Result) error {
 		if signal.Sequence < 1 || signal.Timestamp.IsZero() || signal.Action == "" || signal.StrategyState == "" || signal.Reason == "" || signal.NextCondition == "" || signal.OrderStatus == "" {
 			return fmt.Errorf("backtest signal is incomplete")
 		}
+		if signal.BreakEvenFloorNetPrice < 0 || math.IsNaN(signal.BreakEvenFloorNetPrice) || math.IsInf(signal.BreakEvenFloorNetPrice, 0) {
+			return fmt.Errorf("backtest signal break-even floor must be finite and non-negative")
+		}
 	}
 	for _, trade := range result.Trades {
 		if trade.Sequence < 1 || trade.SignalTimestamp.IsZero() || trade.Side == "" || trade.Action == "" || trade.Status == "" || trade.Reason == "" {
 			return fmt.Errorf("backtest trade is incomplete")
+		}
+		if trade.BreakEvenFloorNetPrice < 0 || math.IsNaN(trade.BreakEvenFloorNetPrice) || math.IsInf(trade.BreakEvenFloorNetPrice, 0) {
+			return fmt.Errorf("backtest trade break-even floor must be finite and non-negative")
 		}
 	}
 	return nil
@@ -284,7 +290,7 @@ func nullableFloat(value float64) any {
 }
 
 func (s *Store) backtestSignals(ctx context.Context, runID string) ([]backtest.Signal, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT sequence, timestamp, decision_close, action, action_pct, strategy_state, reason, next_condition, order_status FROM backtest_signals WHERE run_id = ? ORDER BY sequence ASC`, runID)
+	rows, err := s.db.QueryContext(ctx, `SELECT sequence, timestamp, decision_close, action, action_pct, strategy_state, reason, next_condition, order_status, break_even_floor_net_price FROM backtest_signals WHERE run_id = ? ORDER BY sequence ASC`, runID)
 	if err != nil {
 		return nil, fmt.Errorf("get backtest signals: %w", err)
 	}
@@ -293,11 +299,15 @@ func (s *Store) backtestSignals(ctx context.Context, runID string) ([]backtest.S
 	for rows.Next() {
 		var value backtest.Signal
 		var timestamp string
-		if err := rows.Scan(&value.Sequence, &timestamp, &value.DecisionClose, &value.Action, &value.ActionPct, &value.StrategyState, &value.Reason, &value.NextCondition, &value.OrderStatus); err != nil {
+		var floor sql.NullFloat64
+		if err := rows.Scan(&value.Sequence, &timestamp, &value.DecisionClose, &value.Action, &value.ActionPct, &value.StrategyState, &value.Reason, &value.NextCondition, &value.OrderStatus, &floor); err != nil {
 			return nil, fmt.Errorf("scan backtest signal: %w", err)
 		}
 		if value.Timestamp, err = parseDatabaseTime(timestamp); err != nil {
 			return nil, err
+		}
+		if floor.Valid {
+			value.BreakEvenFloorNetPrice = floor.Float64
 		}
 		values = append(values, value)
 	}
@@ -305,7 +315,7 @@ func (s *Store) backtestSignals(ctx context.Context, runID string) ([]backtest.S
 }
 
 func (s *Store) backtestTrades(ctx context.Context, runID string) ([]backtest.Trade, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT sequence, signal_sequence, signal_timestamp, execution_timestamp, side, action, requested_pct, status, raw_open_price, fill_price, quantity, gross_notional_usd, fee_usd, cash_after_usd, quantity_after, average_entry_after, reason FROM backtest_trades WHERE run_id = ? ORDER BY sequence ASC`, runID)
+	rows, err := s.db.QueryContext(ctx, `SELECT sequence, signal_sequence, signal_timestamp, execution_timestamp, side, action, requested_pct, status, raw_open_price, fill_price, quantity, gross_notional_usd, fee_usd, cash_after_usd, quantity_after, average_entry_after, reason, break_even_floor_net_price FROM backtest_trades WHERE run_id = ? ORDER BY sequence ASC`, runID)
 	if err != nil {
 		return nil, fmt.Errorf("get backtest trades: %w", err)
 	}
@@ -315,8 +325,8 @@ func (s *Store) backtestTrades(ctx context.Context, runID string) ([]backtest.Tr
 		var value backtest.Trade
 		var signalTimestamp string
 		var executionTimestamp sql.NullString
-		var rawOpenValue, fillValue sql.NullFloat64
-		if err := rows.Scan(&value.Sequence, &value.SignalSequence, &signalTimestamp, &executionTimestamp, &value.Side, &value.Action, &value.RequestedPct, &value.Status, &rawOpenValue, &fillValue, &value.Quantity, &value.GrossNotionalUSD, &value.FeeUSD, &value.CashAfterUSD, &value.QuantityAfter, &value.AverageEntryAfter, &value.Reason); err != nil {
+		var rawOpenValue, fillValue, floor sql.NullFloat64
+		if err := rows.Scan(&value.Sequence, &value.SignalSequence, &signalTimestamp, &executionTimestamp, &value.Side, &value.Action, &value.RequestedPct, &value.Status, &rawOpenValue, &fillValue, &value.Quantity, &value.GrossNotionalUSD, &value.FeeUSD, &value.CashAfterUSD, &value.QuantityAfter, &value.AverageEntryAfter, &value.Reason, &floor); err != nil {
 			return nil, fmt.Errorf("scan backtest trade: %w", err)
 		}
 		if value.SignalTimestamp, err = parseDatabaseTime(signalTimestamp); err != nil {
@@ -332,6 +342,9 @@ func (s *Store) backtestTrades(ctx context.Context, runID string) ([]backtest.Tr
 		}
 		if fillValue.Valid {
 			value.FillPrice = fillValue.Float64
+		}
+		if floor.Valid {
+			value.BreakEvenFloorNetPrice = floor.Float64
 		}
 		values = append(values, value)
 	}
