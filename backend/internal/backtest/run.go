@@ -17,7 +17,7 @@ func Run(request Request, candles []market.Candle) (Result, error) {
 	if err := ValidateRequest(request); err != nil {
 		return Result{}, err
 	}
-	if err := validateCandles(candles); err != nil {
+	if err := ValidateCandles(candles); err != nil {
 		return Result{}, err
 	}
 	startIndex, endIndex, err := rangeIndexes(candles, request.Start, request.End)

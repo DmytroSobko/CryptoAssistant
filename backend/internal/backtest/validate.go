@@ -11,6 +11,10 @@ import (
 
 const minimumHistory = 200
 
+// MinimumCandleCount is the smallest complete imported data set that can
+// provide the SMA200 warm-up plus at least one decision candle.
+const MinimumCandleCount = minimumHistory + 1
+
 func ValidateRequest(request Request) error {
 	if request.Asset != "BTC" && request.Asset != "ETH" {
 		return fmt.Errorf("asset must be BTC or ETH")
@@ -36,7 +40,9 @@ func ValidateRequest(request Request) error {
 	return nil
 }
 
-func validateCandles(candles []market.Candle) error {
+// ValidateCandles verifies the canonical daily-candle constraints shared by
+// CSV import, SQLite reads, and the pure simulator.
+func ValidateCandles(candles []market.Candle) error {
 	if len(candles) == 0 {
 		return fmt.Errorf("at least one candle is required")
 	}
