@@ -7,7 +7,7 @@ interface DashboardPageProps {
   strategy: Record<AssetSymbol, StrategyResult | null>;
   isLoading: boolean;
   lastRefreshedAt: Date | null;
-  onRefresh: () => Promise<void>;
+  onRefresh: (refreshMarketData?: boolean) => Promise<void>;
 }
 
 function refreshTime(value: Date | null): string {
@@ -27,7 +27,7 @@ export function DashboardPage({ portfolio, market, strategy, isLoading, lastRefr
           <p className="cash-balance">Cash balance: <strong>${(portfolio?.cashBalance ?? 0).toLocaleString()}</strong></p>
           <div className="dashboard-refresh">
             <span>Last checked: {refreshTime(lastRefreshedAt)}</span>
-            <button className="secondary-button" disabled={isLoading} onClick={() => { void onRefresh(); }} type="button">{isLoading ? "Refreshing…" : "Refresh"}</button>
+            <button className="secondary-button" disabled={isLoading} onClick={() => { void onRefresh(true); }} type="button">{isLoading ? "Refreshing…" : "Refresh"}</button>
           </div>
         </div>
       </header>

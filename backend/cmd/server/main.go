@@ -34,7 +34,7 @@ func main() {
 
 	server := &http.Server{
 		Addr:              cfg.APIAddr,
-		Handler:           api.NewServer(store, cfg).Routes(),
+		Handler:           api.NewServer(store, cfg, refresher).Routes(),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
@@ -58,7 +58,9 @@ func main() {
 
 func refreshMarketData(ctx context.Context, refresher *marketdata.Refresher, interval time.Duration) {
 	refresh := func() {
-		if err := refresher.RefreshAll(ctx); err != nil {
+		refreshContext, cancel := context.WithTimeout(ctx, 70*time.Second)
+		defer cancel()
+		if err := refresher.RefreshAll(refreshContext); err != nil {
 			log.Printf("refresh public market data: %v", err)
 		}
 	}

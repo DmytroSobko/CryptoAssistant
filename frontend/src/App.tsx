@@ -26,12 +26,20 @@ export default function App() {
   const dashboardRequested = useRef(false);
   const dashboardRefreshInProgress = useRef(false);
 
-  const refreshDashboard = useCallback(async () => {
+  const refreshDashboard = useCallback(async (refreshMarketData = false) => {
     if (dashboardRefreshInProgress.current) return;
     dashboardRefreshInProgress.current = true;
     setIsDashboardLoading(true);
     setConnectionError(null);
     try {
+      const failures: unknown[] = [];
+      if (refreshMarketData) {
+        try {
+          await api.refreshMarket();
+        } catch (error) {
+          failures.push(error);
+        }
+      }
       const results = await Promise.allSettled([
         api.portfolio(),
         api.market("BTC"),
@@ -46,8 +54,10 @@ export default function App() {
       if (btcStrategy.status === "fulfilled") setStrategy((current) => ({ ...current, BTC: btcStrategy.value }));
       if (ethStrategy.status === "fulfilled") setStrategy((current) => ({ ...current, ETH: ethStrategy.value }));
 
-      const failures = results.filter((result): result is PromiseRejectedResult => result.status === "rejected");
-      setConnectionError(failures.length > 0 ? failures.map((failure) => failure.reason instanceof Error ? failure.reason.message : "Request failed").join(" · ") : null);
+      for (const result of results) {
+        if (result.status === "rejected") failures.push(result.reason);
+      }
+      setConnectionError(failures.length > 0 ? failures.map((failure) => failure instanceof Error ? failure.message : "Request failed").join(" · ") : null);
       setLastDashboardRefresh(new Date());
     } finally {
       dashboardRefreshInProgress.current = false;

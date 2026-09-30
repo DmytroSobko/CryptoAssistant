@@ -3,10 +3,12 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/dmytrosobko/crypto-strategy-assistant/backend/internal/config"
 	"github.com/dmytrosobko/crypto-strategy-assistant/backend/internal/portfolio"
@@ -15,20 +17,29 @@ import (
 	"github.com/dmytrosobko/crypto-strategy-assistant/backend/internal/strategyservice"
 )
 
+// MarketRefresher updates locally persisted public market data. Keeping this
+// small interface at the HTTP boundary avoids coupling API handlers to a
+// particular provider while leaving strategy evaluation independent of it.
+type MarketRefresher interface {
+	RefreshAll(context.Context) error
+}
+
 type Server struct {
 	store           *storage.Store
 	cfg             config.Config
+	marketRefresher MarketRefresher
 	strategyService *strategyservice.Service
 }
 
-func NewServer(store *storage.Store, cfg config.Config) *Server {
-	return &Server{store: store, cfg: cfg, strategyService: strategyservice.New(store)}
+func NewServer(store *storage.Store, cfg config.Config, marketRefresher MarketRefresher) *Server {
+	return &Server{store: store, cfg: cfg, marketRefresher: marketRefresher, strategyService: strategyservice.New(store)}
 }
 
 func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.handleHealth)
 	mux.HandleFunc("GET /api/market/{asset}", s.handleMarket)
+	mux.HandleFunc("POST /api/market/refresh", s.handleRefreshMarket)
 	mux.HandleFunc("GET /api/strategy/{asset}", s.handleStrategy)
 	mux.HandleFunc("GET /api/portfolio", s.handleGetPortfolio)
 	mux.HandleFunc("PUT /api/portfolio", s.handlePutPortfolio)
@@ -54,6 +65,23 @@ func (s *Server) handleMarket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, snapshot)
+}
+
+// handleRefreshMarket refreshes public display prices and completed daily
+// candles. It deliberately does not evaluate a strategy or alter a portfolio.
+func (s *Server) handleRefreshMarket(w http.ResponseWriter, r *http.Request) {
+	if s.marketRefresher == nil {
+		writeError(w, http.StatusServiceUnavailable, "market refresh is unavailable")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 70*time.Second)
+	defer cancel()
+	if err := s.marketRefresher.RefreshAll(ctx); err != nil {
+		log.Printf("manual market refresh: %v", err)
+		writeError(w, http.StatusBadGateway, "could not refresh market data; existing prices were kept")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleStrategy(w http.ResponseWriter, r *http.Request) {
@@ -170,7 +198,7 @@ func writeError(w http.ResponseWriter, status int, message string) {
 func withCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "http://localhost:1420")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, PUT, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)

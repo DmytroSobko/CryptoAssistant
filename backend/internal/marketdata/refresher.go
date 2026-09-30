@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/dmytrosobko/crypto-strategy-assistant/backend/internal/market"
@@ -15,9 +16,10 @@ import (
 const DailyCandleLimit = 250
 
 type Refresher struct {
-	provider market.DataProvider
-	store    *storage.Store
-	now      func() time.Time
+	provider  market.DataProvider
+	store     *storage.Store
+	now       func() time.Time
+	refreshMu sync.Mutex
 }
 
 func NewRefresher(provider market.DataProvider, store *storage.Store) *Refresher {
@@ -45,6 +47,9 @@ func (r *Refresher) RefreshAsset(ctx context.Context, symbol string) error {
 }
 
 func (r *Refresher) RefreshAll(ctx context.Context) error {
+	r.refreshMu.Lock()
+	defer r.refreshMu.Unlock()
+
 	var refreshErrors []error
 	for _, symbol := range []string{"BTC", "ETH"} {
 		if err := r.RefreshAsset(ctx, symbol); err != nil {

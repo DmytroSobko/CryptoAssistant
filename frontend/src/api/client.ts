@@ -26,6 +26,7 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 export const api = {
   health: () => request<{ status: string }>("/healthz"),
   market: (asset: AssetSymbol) => request<MarketSnapshot>(`/api/market/${asset}`),
+  refreshMarket: () => request<void>("/api/market/refresh", { method: "POST" }),
   strategy: (asset: AssetSymbol) => request<StrategyResult>(`/api/strategy/${asset}`),
   history: () => request<StrategyEvent[]>("/api/history"),
   portfolio: () => request<Portfolio>("/api/portfolio"),

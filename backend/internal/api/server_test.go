@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -25,7 +26,7 @@ func newTestHandler(t *testing.T) http.Handler {
 	if err := store.Migrate("../../migrations"); err != nil {
 		t.Fatalf("migrate store: %v", err)
 	}
-	return NewServer(store, config.Config{}).Routes()
+	return NewServer(store, config.Config{}, nil).Routes()
 }
 
 func TestPortfolioAndConfigEndpoints(t *testing.T) {
@@ -76,7 +77,7 @@ func TestMarketEndpointReturnsPersistedCurrentPrice(t *testing.T) {
 	if err := store.SaveCurrentPrice(context.Background(), market.Snapshot{Symbol: "BTC", Price: 84200.5, UpdatedAt: updatedAt}); err != nil {
 		t.Fatalf("save market snapshot: %v", err)
 	}
-	handler := NewServer(store, config.Config{}).Routes()
+	handler := NewServer(store, config.Config{}, nil).Routes()
 
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/market/btc", nil))
@@ -86,6 +87,56 @@ func TestMarketEndpointReturnsPersistedCurrentPrice(t *testing.T) {
 	if !bytes.Contains(response.Body.Bytes(), []byte(`"symbol":"BTC"`)) || !bytes.Contains(response.Body.Bytes(), []byte(`"price":84200.5`)) || !bytes.Contains(response.Body.Bytes(), []byte(`"updatedAt":"2026-01-03T12:00:00Z"`)) {
 		t.Fatalf("unexpected market response: %s", response.Body.String())
 	}
+}
+
+func TestMarketRefreshEndpointRefreshesPublicDataWithoutEvaluatingStrategy(t *testing.T) {
+	store, err := storage.Open(filepath.Join(t.TempDir(), "assistant.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { store.Close() })
+	if err := store.Migrate("../../migrations"); err != nil {
+		t.Fatalf("migrate store: %v", err)
+	}
+	refresher := &fakeMarketRefresher{}
+	handler := NewServer(store, config.Config{}, refresher).Routes()
+
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/api/market/refresh", nil))
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("market refresh status = %d, body = %s", response.Code, response.Body.String())
+	}
+	if refresher.calls != 1 {
+		t.Fatalf("market refresh calls = %d, want 1", refresher.calls)
+	}
+	state, err := store.GetStrategyState(context.Background(), "BTC")
+	if err != nil {
+		t.Fatalf("load strategy state: %v", err)
+	}
+	if state.CurrentState != strategy.StateCash {
+		t.Fatalf("market refresh unexpectedly evaluated strategy: %+v", state)
+	}
+}
+
+func TestMarketRefreshEndpointReportsProviderFailure(t *testing.T) {
+	refresher := &fakeMarketRefresher{err: errors.New("provider unavailable")}
+	handler := NewServer(nil, config.Config{}, refresher).Routes()
+
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/api/market/refresh", nil))
+	if response.Code != http.StatusBadGateway || !bytes.Contains(response.Body.Bytes(), []byte("existing prices were kept")) {
+		t.Fatalf("market refresh failure response (%d): %s", response.Code, response.Body.String())
+	}
+}
+
+type fakeMarketRefresher struct {
+	calls int
+	err   error
+}
+
+func (f *fakeMarketRefresher) RefreshAll(context.Context) error {
+	f.calls++
+	return f.err
 }
 
 func TestStrategyEndpointEvaluatesDailyCandlesAndRecordsOneActionEvent(t *testing.T) {
@@ -111,7 +162,7 @@ func TestStrategyEndpointEvaluatesDailyCandlesAndRecordsOneActionEvent(t *testin
 	for index, price := range prices {
 		candles[index] = market.Candle{Timestamp: start.AddDate(0, 0, index), Open: price, High: price, Low: price, Close: price}
 	}
-	handler := NewServer(store, config.Config{}).Routes()
+	handler := NewServer(store, config.Config{}, nil).Routes()
 	if err := store.SaveDailyCandles(context.Background(), "BTC", candles[:4]); err != nil {
 		t.Fatalf("save correction candles: %v", err)
 	}
