@@ -148,7 +148,7 @@ func TestPersistExpandedStrategyStateAndEvents(t *testing.T) {
 
 	anchor := time.Date(2026, time.January, 2, 0, 0, 0, 0, time.UTC)
 	expected := strategy.PersistedState{
-		Asset: "BTC", CurrentState: strategy.StateProfitProtection,
+		Asset: "BTC", StrategyID: strategy.StrategyRecoveryBreakout, CurrentState: strategy.StateProfitProtection,
 		LocalHigh: 120, LocalLow: 90, HigherLow: 100, HighestPrice: 140, DrawdownPct: -8,
 		CorrectionHighAt: anchor, LastBreakoutHighAt: anchor.AddDate(0, 0, 5), LastBreakoutHigherLowAt: anchor.AddDate(0, 0, 4), ReentryAfter: anchor.AddDate(0, 0, -3),
 		EntryStep: 2, ProfitTaken: true, Drawdown1Triggered: true, Drawdown2Triggered: true, PositionOpen: true,
@@ -174,6 +174,62 @@ func TestPersistExpandedStrategyStateAndEvents(t *testing.T) {
 	}
 	if len(events) != 1 || events[0].Asset != event.Asset || events[0].Action != event.Action || events[0].Price != event.Price || !events[0].Timestamp.Equal(event.Timestamp) {
 		t.Fatalf("event round trip mismatch: got %+v, want %+v", events, event)
+	}
+}
+
+func TestPerAssetStrategyProfilesKeepConfigurationsAndStatesIndependent(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "assistant.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if err := store.Migrate("../../migrations"); err != nil {
+		t.Fatal(err)
+	}
+
+	profile, err := store.GetAssetStrategySettings(context.Background(), "BTC")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if profile.SelectedStrategyID != strategy.StrategyRecoveryBreakout || profile.RecoveryBreakout.StrategyID != strategy.StrategyRecoveryBreakout || profile.DipAccumulation.StrategyID != strategy.StrategyDipAccumulation {
+		t.Fatalf("unexpected migrated BTC profile: %+v", profile)
+	}
+
+	recoveryState := strategy.PersistedState{Asset: "BTC", StrategyID: strategy.StrategyRecoveryBreakout, CurrentState: strategy.StatePartialPosition, EntryStep: 1}
+	if err := store.SaveStrategyState(context.Background(), recoveryState); err != nil {
+		t.Fatal(err)
+	}
+	profile.SelectedStrategyID = strategy.StrategyDipAccumulation
+	profile.DipAccumulation.Entry1Pct = 35
+	if err := store.SaveAssetStrategySettings(context.Background(), "BTC", profile); err != nil {
+		t.Fatal(err)
+	}
+	active, err := store.GetStrategyConfig(context.Background(), "BTC")
+	if err != nil || active.StrategyID != strategy.StrategyDipAccumulation || active.Entry1Pct != 35 {
+		t.Fatalf("active Dip Accumulation config=%+v err=%v", active, err)
+	}
+	dipState, err := store.GetStrategyState(context.Background(), "BTC")
+	if err != nil || dipState.StrategyID != strategy.StrategyDipAccumulation || dipState.EntryStep != 0 {
+		t.Fatalf("newly selected Dip Accumulation state=%+v err=%v; want fresh state", dipState, err)
+	}
+	dipState.CurrentState = strategy.StatePartialPosition
+	dipState.EntryStep = 1
+	dipState.FirstEntryReferencePrice = 100
+	if err := store.SaveStrategyState(context.Background(), dipState); err != nil {
+		t.Fatal(err)
+	}
+
+	profile.SelectedStrategyID = strategy.StrategyRecoveryBreakout
+	if err := store.SaveAssetStrategySettings(context.Background(), "BTC", profile); err != nil {
+		t.Fatal(err)
+	}
+	recoveryAfterSwitch, err := store.GetStrategyState(context.Background(), "BTC")
+	if err != nil || recoveryAfterSwitch.StrategyID != strategy.StrategyRecoveryBreakout || recoveryAfterSwitch.EntryStep != 0 {
+		t.Fatalf("reselected Recovery Breakout state=%+v err=%v; want a fresh state", recoveryAfterSwitch, err)
+	}
+	storedDip, err := getStrategyStateForStrategy(context.Background(), store.db, "BTC", strategy.StrategyDipAccumulation)
+	if err != nil || storedDip.EntryStep != 1 || storedDip.FirstEntryReferencePrice != 100 {
+		t.Fatalf("switching away corrupted Dip Accumulation state=%+v err=%v", storedDip, err)
 	}
 }
 

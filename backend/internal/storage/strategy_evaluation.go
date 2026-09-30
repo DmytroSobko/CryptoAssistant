@@ -55,8 +55,9 @@ func (s *Store) EvaluateStrategyAtomically(ctx context.Context, asset string, ev
 		}
 		event := StrategyEvent{
 			Asset: asset, Timestamp: input.Candles[len(input.Candles)-1].Timestamp,
-			Action: string(result.Action), Price: result.Price, Reason: result.Reason, State: string(result.State),
-			EventKey: strategyEventKey(asset, input.Candles[len(input.Candles)-1].Timestamp, result),
+			StrategyID: input.Config.ResolvedStrategyID(),
+			Action:     string(result.Action), Price: result.Price, Reason: result.Reason, State: string(result.State),
+			EventKey: strategyEventKey(asset, input.Config.ResolvedStrategyID(), input.Candles[len(input.Candles)-1].Timestamp, result),
 		}
 		if err := appendStrategyEvent(ctx, tx, event); err != nil {
 			return strategy.Result{}, err
@@ -140,8 +141,8 @@ func actionableStrategyAction(action strategy.Action) bool {
 	}
 }
 
-func strategyEventKey(asset string, timestamp time.Time, result strategy.Result) string {
+func strategyEventKey(asset string, strategyID strategy.StrategyID, timestamp time.Time, result strategy.Result) string {
 	// The action, resulting state, and percentage distinguish separate stages
 	// that happen to be evaluated from the same completed daily candle.
-	return fmt.Sprintf("%s|%s|%s|%s|%.8f", asset, databaseTime(timestamp), result.Action, result.State, result.ActionPct)
+	return fmt.Sprintf("%s|%s|%s|%s|%s|%.8f", asset, strategyID, databaseTime(timestamp), result.Action, result.State, result.ActionPct)
 }

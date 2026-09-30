@@ -10,31 +10,47 @@ import (
 	"github.com/dmytrosobko/crypto-strategy-assistant/backend/internal/strategy"
 )
 
-// GetStrategyState returns the facts needed by the pure strategy engine to
-// evaluate an asset deterministically. A state is created only after a caller
-// saves one, so an unseen asset starts in CASH.
+// GetStrategyState returns the state for the asset's currently selected
+// strategy. Each strategy has an independent state row, so selecting one does
+// not overwrite the other strategy's cycle.
 func (s *Store) GetStrategyState(ctx context.Context, asset string) (strategy.PersistedState, error) {
-	return getStrategyState(ctx, s.db, asset)
+	config, err := s.GetStrategyConfig(ctx, asset)
+	if err != nil {
+		return strategy.PersistedState{}, err
+	}
+	return getStrategyStateForStrategy(ctx, s.db, asset, config.ResolvedStrategyID())
 }
 
 func getStrategyState(ctx context.Context, db queryRower, asset string) (strategy.PersistedState, error) {
+	config, err := getStrategyConfig(ctx, db, asset)
+	if err != nil {
+		return strategy.PersistedState{}, err
+	}
+	return getStrategyStateForStrategy(ctx, db, asset, config.ResolvedStrategyID())
+}
+
+func getStrategyStateForStrategy(ctx context.Context, db queryRower, asset string, strategyID strategy.StrategyID) (strategy.PersistedState, error) {
 	asset, err := strategyAsset(asset)
 	if err != nil {
 		return strategy.PersistedState{}, err
 	}
-
-	state := strategy.PersistedState{Asset: asset, CurrentState: strategy.StateCash}
+	if strategyID == "" {
+		strategyID = strategy.StrategyRecoveryBreakout
+	}
+	state := strategy.PersistedState{Asset: asset, StrategyID: strategyID, CurrentState: strategy.StateCash}
 	var currentState string
-	var correctionHighAt, lastBreakoutHighAt, lastBreakoutHigherLowAt, reentryAfter sql.NullString
+	var firstEntryReferenceAt, lastDipEntryAt, correctionHighAt, lastBreakoutHighAt, lastBreakoutHigherLowAt, reentryAfter sql.NullString
 	err = db.QueryRowContext(ctx, `
 		SELECT state,
 			COALESCE(local_high, 0), COALESCE(local_low, 0), COALESCE(higher_low, 0),
-			COALESCE(highest_price, 0), COALESCE(drawdown_pct, 0),
+			COALESCE(highest_price, 0), COALESCE(drawdown_pct, 0), COALESCE(first_entry_reference_price, 0),
+			first_entry_reference_at, last_dip_entry_at,
 			correction_high_at, last_breakout_high_at, last_breakout_higher_low_at, reentry_after,
 			entry_step, profit_taken, drawdown1_triggered, drawdown2_triggered, drawdown3_triggered, position_open
-		FROM strategy_states WHERE asset = ?`, asset).Scan(
+		FROM strategy_states_v2 WHERE asset = ? AND strategy_id = ?`, asset, strategyID).Scan(
 		&currentState,
-		&state.LocalHigh, &state.LocalLow, &state.HigherLow, &state.HighestPrice, &state.DrawdownPct,
+		&state.LocalHigh, &state.LocalLow, &state.HigherLow, &state.HighestPrice, &state.DrawdownPct, &state.FirstEntryReferencePrice,
+		&firstEntryReferenceAt, &lastDipEntryAt,
 		&correctionHighAt, &lastBreakoutHighAt, &lastBreakoutHigherLowAt, &reentryAfter,
 		&state.EntryStep, &state.ProfitTaken, &state.Drawdown1Triggered, &state.Drawdown2Triggered, &state.Drawdown3Triggered, &state.PositionOpen,
 	)
@@ -42,20 +58,26 @@ func getStrategyState(ctx context.Context, db queryRower, asset string) (strateg
 		return state, nil
 	}
 	if err != nil {
-		return strategy.PersistedState{}, fmt.Errorf("get %s strategy state: %w", asset, err)
+		return strategy.PersistedState{}, fmt.Errorf("get %s %s strategy state: %w", asset, strategyID, err)
 	}
 	state.CurrentState = strategy.State(currentState)
-	if state.CorrectionHighAt, err = nullableDatabaseTime(correctionHighAt); err != nil {
-		return strategy.PersistedState{}, fmt.Errorf("parse %s correction high timestamp: %w", asset, err)
-	}
-	if state.LastBreakoutHighAt, err = nullableDatabaseTime(lastBreakoutHighAt); err != nil {
-		return strategy.PersistedState{}, fmt.Errorf("parse %s breakout high timestamp: %w", asset, err)
-	}
-	if state.LastBreakoutHigherLowAt, err = nullableDatabaseTime(lastBreakoutHigherLowAt); err != nil {
-		return strategy.PersistedState{}, fmt.Errorf("parse %s breakout higher-low timestamp: %w", asset, err)
-	}
-	if state.ReentryAfter, err = nullableDatabaseTime(reentryAfter); err != nil {
-		return strategy.PersistedState{}, fmt.Errorf("parse %s re-entry timestamp: %w", asset, err)
+	for _, field := range []struct {
+		name   string
+		value  sql.NullString
+		target *time.Time
+	}{
+		{"first entry reference", firstEntryReferenceAt, &state.FirstEntryReferenceAt},
+		{"last dip entry", lastDipEntryAt, &state.LastDipEntryAt},
+		{"correction high", correctionHighAt, &state.CorrectionHighAt},
+		{"breakout high", lastBreakoutHighAt, &state.LastBreakoutHighAt},
+		{"breakout higher-low", lastBreakoutHigherLowAt, &state.LastBreakoutHigherLowAt},
+		{"re-entry", reentryAfter, &state.ReentryAfter},
+	} {
+		parsed, parseErr := nullableDatabaseTime(field.value)
+		if parseErr != nil {
+			return strategy.PersistedState{}, fmt.Errorf("parse %s %s timestamp: %w", asset, field.name, parseErr)
+		}
+		*field.target = parsed
 	}
 	return state, nil
 }
@@ -75,39 +97,51 @@ func saveStrategyState(ctx context.Context, db execer, state strategy.PersistedS
 	if err != nil {
 		return err
 	}
+	strategyID := state.StrategyID
+	if strategyID == "" {
+		strategyID = strategy.StrategyRecoveryBreakout
+	}
+	if strategyID != strategy.StrategyRecoveryBreakout && strategyID != strategy.StrategyDipAccumulation {
+		return fmt.Errorf("invalid strategy ID %q", strategyID)
+	}
 	if !validStrategyState(state.CurrentState) {
 		return fmt.Errorf("invalid strategy state %q", state.CurrentState)
 	}
 	if state.EntryStep < 0 || state.EntryStep > 3 {
 		return fmt.Errorf("strategy entry step must be between 0 and 3")
 	}
-	for _, value := range []float64{state.LocalHigh, state.LocalLow, state.HigherLow, state.HighestPrice, state.DrawdownPct} {
+	for _, value := range []float64{state.LocalHigh, state.LocalLow, state.HigherLow, state.HighestPrice, state.DrawdownPct, state.FirstEntryReferencePrice} {
 		if math.IsNaN(value) || math.IsInf(value, 0) {
 			return fmt.Errorf("strategy state values must be finite")
 		}
 	}
+	if strategyID == strategy.StrategyDipAccumulation && state.EntryStep > 0 && (math.IsNaN(state.FirstEntryReferencePrice) || math.IsInf(state.FirstEntryReferencePrice, 0) || state.FirstEntryReferencePrice <= 0) {
+		return fmt.Errorf("dip accumulation reference price must be finite and positive")
+	}
 
 	_, err = db.ExecContext(ctx, `
-		INSERT INTO strategy_states (
-			asset, state, local_high, local_low, higher_low, highest_price, drawdown_pct,
+		INSERT INTO strategy_states_v2 (
+			asset, strategy_id, state, local_high, local_low, higher_low, highest_price, drawdown_pct,
+			first_entry_reference_price, first_entry_reference_at, last_dip_entry_at,
 			correction_high_at, last_breakout_high_at, last_breakout_higher_low_at, reentry_after,
 			entry_step, profit_taken, drawdown1_triggered, drawdown2_triggered, drawdown3_triggered, position_open, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-		ON CONFLICT(asset) DO UPDATE SET
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+		ON CONFLICT(asset, strategy_id) DO UPDATE SET
 			state = excluded.state, local_high = excluded.local_high, local_low = excluded.local_low,
 			higher_low = excluded.higher_low, highest_price = excluded.highest_price, drawdown_pct = excluded.drawdown_pct,
-			correction_high_at = excluded.correction_high_at, last_breakout_high_at = excluded.last_breakout_high_at,
-			last_breakout_higher_low_at = excluded.last_breakout_higher_low_at, reentry_after = excluded.reentry_after,
-			entry_step = excluded.entry_step, profit_taken = excluded.profit_taken,
+			first_entry_reference_price = excluded.first_entry_reference_price, first_entry_reference_at = excluded.first_entry_reference_at,
+			last_dip_entry_at = excluded.last_dip_entry_at, correction_high_at = excluded.correction_high_at,
+			last_breakout_high_at = excluded.last_breakout_high_at, last_breakout_higher_low_at = excluded.last_breakout_higher_low_at,
+			reentry_after = excluded.reentry_after, entry_step = excluded.entry_step, profit_taken = excluded.profit_taken,
 			drawdown1_triggered = excluded.drawdown1_triggered, drawdown2_triggered = excluded.drawdown2_triggered,
-			drawdown3_triggered = excluded.drawdown3_triggered, position_open = excluded.position_open,
-			updated_at = CURRENT_TIMESTAMP`,
-		asset, state.CurrentState, state.LocalHigh, state.LocalLow, state.HigherLow, state.HighestPrice, state.DrawdownPct,
+			drawdown3_triggered = excluded.drawdown3_triggered, position_open = excluded.position_open, updated_at = CURRENT_TIMESTAMP`,
+		asset, strategyID, state.CurrentState, state.LocalHigh, state.LocalLow, state.HigherLow, state.HighestPrice, state.DrawdownPct,
+		state.FirstEntryReferencePrice, nullableTime(state.FirstEntryReferenceAt), nullableTime(state.LastDipEntryAt),
 		nullableTime(state.CorrectionHighAt), nullableTime(state.LastBreakoutHighAt), nullableTime(state.LastBreakoutHigherLowAt), nullableTime(state.ReentryAfter),
 		state.EntryStep, state.ProfitTaken, state.Drawdown1Triggered, state.Drawdown2Triggered, state.Drawdown3Triggered, state.PositionOpen,
 	)
 	if err != nil {
-		return fmt.Errorf("save %s strategy state: %w", asset, err)
+		return fmt.Errorf("save %s %s strategy state: %w", asset, strategyID, err)
 	}
 	return nil
 }
@@ -123,6 +157,13 @@ func appendStrategyEvent(ctx context.Context, db execer, event StrategyEvent) er
 	if err != nil {
 		return err
 	}
+	strategyID := event.StrategyID
+	if strategyID == "" {
+		strategyID = strategy.StrategyRecoveryBreakout
+	}
+	if strategyID != strategy.StrategyRecoveryBreakout && strategyID != strategy.StrategyDipAccumulation {
+		return fmt.Errorf("invalid strategy event ID %q", strategyID)
+	}
 	if event.Timestamp.IsZero() {
 		return fmt.Errorf("strategy event timestamp is required")
 	}
@@ -133,10 +174,10 @@ func appendStrategyEvent(ctx context.Context, db execer, event StrategyEvent) er
 		return fmt.Errorf("strategy event price must be finite and non-negative")
 	}
 	if event.EventKey == "" {
-		event.EventKey = fmt.Sprintf("%s|%s|%s|%s|%.8f", asset, databaseTime(event.Timestamp), event.Action, event.State, event.Price)
+		event.EventKey = fmt.Sprintf("%s|%s|%s|%s|%s|%.8f", asset, strategyID, databaseTime(event.Timestamp), event.Action, event.State, event.Price)
 	}
-	_, err = db.ExecContext(ctx, `INSERT INTO strategy_events(asset, timestamp, action, price, reason, state, event_key) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(event_key) DO NOTHING`,
-		asset, databaseTime(event.Timestamp), event.Action, event.Price, event.Reason, event.State, event.EventKey)
+	_, err = db.ExecContext(ctx, `INSERT INTO strategy_events(asset, strategy_id, timestamp, action, price, reason, state, event_key) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(event_key) DO NOTHING`,
+		asset, strategyID, databaseTime(event.Timestamp), event.Action, event.Price, event.Reason, event.State, event.EventKey)
 	if err != nil {
 		return fmt.Errorf("append %s strategy event: %w", asset, err)
 	}

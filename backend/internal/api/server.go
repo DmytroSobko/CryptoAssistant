@@ -48,6 +48,8 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /api/history", s.handleHistory)
 	mux.HandleFunc("GET /api/config", s.handleGetConfig)
 	mux.HandleFunc("PUT /api/config/{asset}", s.handlePutConfig)
+	mux.HandleFunc("GET /api/strategy-settings", s.handleGetStrategySettings)
+	mux.HandleFunc("PUT /api/strategy-settings/{asset}", s.handlePutStrategySettings)
 	mux.HandleFunc("POST /api/backtest/candle-sets", s.handleImportBacktestCandleSet)
 	mux.HandleFunc("GET /api/backtest/candle-sets", s.handleListBacktestCandleSets)
 	mux.HandleFunc("POST /api/backtests", s.handleCreateBacktest)
@@ -171,6 +173,45 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := s.store.SaveStrategyConfig(r.Context(), asset, input); err != nil {
 		writeError(w, http.StatusInternalServerError, "could not save configuration")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleGetStrategySettings exposes the complete per-asset profile used by
+// the forthcoming selector UI. The existing /api/config endpoint remains a
+// compatibility view of the currently active configuration.
+func (s *Server) handleGetStrategySettings(w http.ResponseWriter, r *http.Request) {
+	btc, err := s.store.GetAssetStrategySettings(r.Context(), "BTC")
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not load BTC strategy settings")
+		return
+	}
+	eth, err := s.store.GetAssetStrategySettings(r.Context(), "ETH")
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not load ETH strategy settings")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]strategy.AssetStrategySettings{"BTC": btc, "ETH": eth})
+}
+
+func (s *Server) handlePutStrategySettings(w http.ResponseWriter, r *http.Request) {
+	asset, ok := validAsset(r.PathValue("asset"))
+	if !ok {
+		writeError(w, http.StatusBadRequest, "asset must be BTC or ETH")
+		return
+	}
+	var input strategy.AssetStrategySettings
+	if err := decodeJSON(r, &input); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if _, err := input.Normalized(); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := s.store.SaveAssetStrategySettings(r.Context(), asset, input); err != nil {
+		writeError(w, http.StatusInternalServerError, "could not save strategy settings")
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

@@ -82,13 +82,14 @@ type Config struct {
 // PersistedState contains only facts needed to make a subsequent evaluation
 // deterministic. Storage is intentionally not coupled to this type yet.
 type PersistedState struct {
-	Asset        string  `json:"asset"`
-	CurrentState State   `json:"state"`
-	LocalHigh    float64 `json:"localHigh"`
-	LocalLow     float64 `json:"localLow"`
-	HigherLow    float64 `json:"higherLow"`
-	HighestPrice float64 `json:"highestPrice"`
-	DrawdownPct  float64 `json:"drawdownPct"`
+	Asset        string     `json:"asset"`
+	StrategyID   StrategyID `json:"strategyId,omitempty"`
+	CurrentState State      `json:"state"`
+	LocalHigh    float64    `json:"localHigh"`
+	LocalLow     float64    `json:"localLow"`
+	HigherLow    float64    `json:"higherLow"`
+	HighestPrice float64    `json:"highestPrice"`
+	DrawdownPct  float64    `json:"drawdownPct"`
 
 	// FirstEntryReferencePrice is the completed-close price at which Dip
 	// Accumulation issued its first-entry advisory signal. The live advisor has
@@ -141,6 +142,7 @@ type Engine interface {
 // never mutates a portfolio: returned actions are recommendations, while the
 // caller is responsible for persisting both the portfolio and next state.
 func Evaluate(candles []market.Candle, position portfolio.Asset, config Config, previous PersistedState) (Result, PersistedState) {
+	previous.StrategyID = config.ResolvedStrategyID()
 	switch config.ResolvedStrategyID() {
 	case StrategyRecoveryBreakout:
 		return evaluateRecoveryBreakout(candles, position, config, previous)

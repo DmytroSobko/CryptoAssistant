@@ -13,6 +13,7 @@ func TestEvaluateDispatchPreservesRecoveryBreakoutBehavior(t *testing.T) {
 	candles := candleFixture([]float64{100, 108})
 	position := portfolio.Asset{Symbol: "BTC", Quantity: 1, AverageEntryPrice: 100}
 
+	previous.StrategyID = StrategyRecoveryBreakout
 	wantResult, wantState := evaluateRecoveryBreakout(candles, position, config, previous)
 	gotResult, gotState := Evaluate(candles, position, config, previous)
 	if !reflect.DeepEqual(gotResult, wantResult) || !reflect.DeepEqual(gotState, wantState) {

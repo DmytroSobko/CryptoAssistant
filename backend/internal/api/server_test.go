@@ -121,6 +121,53 @@ func TestBacktestEndpointsRejectBadInputAndOversizedCSV(t *testing.T) {
 	}
 }
 
+func TestStrategySettingsEndpointsSelectAnAssetStrategyWithoutChangingTheOtherAsset(t *testing.T) {
+	handler := newTestHandler(t)
+	initial := serve(handler, http.MethodGet, "/api/strategy-settings", nil)
+	if initial.Code != http.StatusOK {
+		t.Fatalf("initial profile status=%d body=%s", initial.Code, initial.Body.String())
+	}
+	var profiles map[string]strategy.AssetStrategySettings
+	if err := json.Unmarshal(initial.Body.Bytes(), &profiles); err != nil {
+		t.Fatal(err)
+	}
+	btc := profiles["BTC"]
+	eth := profiles["ETH"]
+	btc.SelectedStrategyID = strategy.StrategyDipAccumulation
+	btc.DipAccumulation.Entry1Pct = 35
+	body, err := json.Marshal(btc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved := serve(handler, http.MethodPut, "/api/strategy-settings/BTC", body)
+	if saved.Code != http.StatusNoContent {
+		t.Fatalf("save profile status=%d body=%s", saved.Code, saved.Body.String())
+	}
+
+	loaded := serve(handler, http.MethodGet, "/api/strategy-settings", nil)
+	if loaded.Code != http.StatusOK {
+		t.Fatalf("loaded profile status=%d body=%s", loaded.Code, loaded.Body.String())
+	}
+	if err := json.Unmarshal(loaded.Body.Bytes(), &profiles); err != nil {
+		t.Fatal(err)
+	}
+	if profiles["BTC"].SelectedStrategyID != strategy.StrategyDipAccumulation || profiles["BTC"].DipAccumulation.Entry1Pct != 35 || profiles["ETH"] != eth {
+		t.Fatalf("profiles after BTC selection=%+v", profiles)
+	}
+
+	active := serve(handler, http.MethodGet, "/api/config", nil)
+	if active.Code != http.StatusOK {
+		t.Fatalf("active config status=%d body=%s", active.Code, active.Body.String())
+	}
+	var configs map[string]strategy.Config
+	if err := json.Unmarshal(active.Body.Bytes(), &configs); err != nil {
+		t.Fatal(err)
+	}
+	if configs["BTC"].StrategyID != strategy.StrategyDipAccumulation || configs["BTC"].Entry1Pct != 35 || configs["ETH"].StrategyID != strategy.StrategyRecoveryBreakout {
+		t.Fatalf("active configs=%+v", configs)
+	}
+}
+
 func serve(handler http.Handler, method, path string, body []byte) *httptest.ResponseRecorder {
 	request := httptest.NewRequest(method, path, bytes.NewReader(body))
 	if body != nil {

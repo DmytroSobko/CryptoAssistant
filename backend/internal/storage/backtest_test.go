@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -35,12 +36,38 @@ func TestBacktestingMigrationUpgradesAnExistingMVPDatabase(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	legacyConfig := DefaultStrategyConfig("BTC")
+	legacyConfig.Entry1Pct = 35
+	legacyJSON, err := json.Marshal(legacyConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.DB().Exec(`INSERT INTO settings(key, value, updated_at) VALUES ('strategy_config_BTC', ?, CURRENT_TIMESTAMP)`, string(legacyJSON)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.DB().Exec(`INSERT INTO strategy_states(asset, state, local_high, local_low, higher_low, highest_price, drawdown_pct, entry_step, position_open) VALUES ('BTC', 'FULL_POSITION', 110, 90, 100, 115, -5, 2, 1)`); err != nil {
+		t.Fatal(err)
+	}
 	if err := store.Migrate("../../migrations"); err != nil {
 		t.Fatalf("upgrade database: %v", err)
 	}
 	var count int
 	if err := store.DB().QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'backtest_candle_sets'`).Scan(&count); err != nil || count != 1 {
 		t.Fatalf("backtest migration did not apply: count=%d err=%v", count, err)
+	}
+	profile, err := store.GetAssetStrategySettings(context.Background(), "BTC")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if profile.SelectedStrategyID != strategy.StrategyRecoveryBreakout || profile.RecoveryBreakout.Entry1Pct != 35 {
+		t.Fatalf("legacy settings were not migrated: %+v", profile)
+	}
+	state, err := getStrategyStateForStrategy(context.Background(), store.DB(), "BTC", strategy.StrategyRecoveryBreakout)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.CurrentState != strategy.StateFullPosition || state.EntryStep != 2 || !state.PositionOpen || state.HighestPrice != 115 {
+		t.Fatalf("legacy strategy state was not migrated: %+v", state)
 	}
 }
 
