@@ -1,18 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./api/client";
 import { DashboardPage } from "./pages/DashboardPage";
+import { BacktestPage } from "./pages/BacktestPage";
 import { HistoryPage } from "./pages/HistoryPage";
 import { PortfolioPage } from "./pages/PortfolioPage";
 import { StrategySettingsPage } from "./pages/StrategySettingsPage";
 import type { AssetSymbol, MarketSnapshot, Portfolio, StrategyResult } from "./types/api";
 
-type Page = "dashboard" | "portfolio" | "history" | "settings";
+type Page = "dashboard" | "portfolio" | "history" | "settings" | "backtests";
 
 const pages: Record<Page, { label: string }> = {
   dashboard: { label: "Dashboard" },
   portfolio: { label: "Portfolio" },
   history: { label: "History" },
   settings: { label: "Strategy settings" },
+  backtests: { label: "Backtests" },
 };
 
 export default function App() {
@@ -95,6 +97,7 @@ export default function App() {
         {page === "portfolio" && <PortfolioPage isLoading={isDashboardLoading} onSaved={handlePortfolioSaved} portfolio={portfolio} />}
         {page === "history" && <HistoryPage />}
         {page === "settings" && <StrategySettingsPage />}
+        {page === "backtests" && <BacktestPage />}
       </section>
     </main>
   );

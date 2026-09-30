@@ -1,4 +1,4 @@
-import type { AssetSymbol, MarketSnapshot, Portfolio, PortfolioInput, StrategyConfig, StrategyEvent, StrategyResult } from "../types/api";
+import type { AssetSymbol, BacktestCandleSet, BacktestImportInput, BacktestRun, BacktestRunInput, BacktestRunSummary, MarketSnapshot, Portfolio, PortfolioInput, StrategyConfig, StrategyEvent, StrategyResult } from "../types/api";
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8080";
 
@@ -33,4 +33,9 @@ export const api = {
   savePortfolio: (portfolio: PortfolioInput) => request<void>("/api/portfolio", { method: "PUT", body: JSON.stringify(portfolio) }),
   config: () => request<Record<"BTC" | "ETH", StrategyConfig>>("/api/config"),
   saveConfig: (asset: "BTC" | "ETH", config: StrategyConfig) => request<void>(`/api/config/${asset}`, { method: "PUT", body: JSON.stringify(config) }),
+  importBacktestCandleSet: (input: BacktestImportInput) => request<BacktestCandleSet>("/api/backtest/candle-sets", { method: "POST", body: JSON.stringify(input) }),
+  backtestCandleSets: (asset?: AssetSymbol) => request<BacktestCandleSet[]>(`/api/backtest/candle-sets${asset ? `?asset=${asset}` : ""}`),
+  createBacktest: (input: BacktestRunInput) => request<BacktestRun>("/api/backtests", { method: "POST", body: JSON.stringify(input) }),
+  backtests: () => request<BacktestRunSummary[]>("/api/backtests"),
+  backtest: (id: string) => request<BacktestRun>(`/api/backtests/${encodeURIComponent(id)}`),
 };

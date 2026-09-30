@@ -70,3 +70,145 @@ export interface StrategyConfig {
   drawdown3Pct: number;
   drawdown3SellPct: number;
 }
+
+export type BacktestExecutionModel = "NEXT_DAILY_OPEN";
+
+export interface BacktestCandleSet {
+  id: string;
+  asset: AssetSymbol;
+  sourceLabel: string;
+  sourceFilename: string;
+  originalSha256: string;
+  schemaVersion: number;
+  candleCount: number;
+  firstTimestamp: string;
+  lastTimestamp: string;
+  importedAt: string;
+}
+
+export interface BacktestImportInput {
+  asset: AssetSymbol;
+  sourceLabel: string;
+  sourceFilename: string;
+  csv: string;
+}
+
+export interface BacktestRunInput {
+  candleSetId: string;
+  asset: AssetSymbol;
+  start: string;
+  end: string;
+  startingCashUsd: number;
+  strategyConfig: StrategyConfig;
+  feeBps: number;
+  slippageBps: number;
+  executionModel: BacktestExecutionModel;
+}
+
+export interface BacktestAssumptions {
+  executionModel: BacktestExecutionModel;
+  signalTiming: string;
+  fillTiming: string;
+  buySizing: string;
+  sellSizing: string;
+  feeBps: number;
+  slippageBps: number;
+  noMarginOrBorrowing: boolean;
+  taxesIncluded: boolean;
+  profitTrigger2Implementation: string;
+}
+
+export interface BacktestSummary {
+  startingCashUsd: number;
+  endingCashUsd: number;
+  endingAssetQuantity: number;
+  endingAssetValueUsd: number;
+  endingEquityUsd: number;
+  netProfitLossUsd: number;
+  returnPct: number;
+  maximumDrawdownPct: number;
+  firstDataTimestamp: string;
+  lastDataTimestamp: string;
+  warmupStart: string;
+  signalCount: number;
+  executedTradeCount: number;
+  rejectedTradeCount: number;
+  unexecutedTradeCount: number;
+  totalFeesUsd: number;
+  buyAndHoldEndingUsd: number;
+  buyAndHoldReturnPct: number;
+}
+
+export interface BacktestSignal {
+  sequence: number;
+  timestamp: string;
+  decisionClose: number;
+  action: string;
+  actionPct: number;
+  strategyState: string;
+  reason: string;
+  nextCondition: string;
+  orderStatus: string;
+}
+
+export interface BacktestTrade {
+  sequence: number;
+  signalSequence: number;
+  signalTimestamp: string;
+  executionTimestamp: string;
+  side: "BUY" | "SELL";
+  action: string;
+  requestedPct: number;
+  status: string;
+  rawOpenPrice: number;
+  fillPrice: number;
+  quantity: number;
+  grossNotionalUsd: number;
+  feeUsd: number;
+  cashAfterUsd: number;
+  quantityAfter: number;
+  averageEntryAfter: number;
+  reason: string;
+}
+
+export interface BacktestEquityPoint {
+  timestamp: string;
+  closePrice: number;
+  cashUsd: number;
+  quantity: number;
+  assetValueUsd: number;
+  equityUsd: number;
+  peakEquityUsd: number;
+  drawdownPct: number;
+}
+
+export interface BacktestResult {
+  request: Omit<BacktestRunInput, "candleSetId">;
+  dataFingerprint: string;
+  assumptions: BacktestAssumptions;
+  summary: BacktestSummary;
+  signals: BacktestSignal[];
+  trades: BacktestTrade[];
+  equityCurve: BacktestEquityPoint[];
+}
+
+export interface BacktestRun {
+  id: string;
+  candleSetId: string;
+  createdAt: string;
+  completedAt: string;
+  result: BacktestResult;
+}
+
+export interface BacktestRunSummary {
+  id: string;
+  candleSetId: string;
+  asset: AssetSymbol;
+  start: string;
+  end: string;
+  startingCashUsd: number;
+  returnPct: number;
+  maximumDrawdownPct: number;
+  createdAt: string;
+  completedAt: string;
+}
