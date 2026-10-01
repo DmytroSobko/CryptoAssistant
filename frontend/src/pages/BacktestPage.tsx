@@ -26,7 +26,7 @@ function warmupStart(set: BacktestCandleSet) { const date = new Date(`${dateValu
 function displayError(error: unknown) { return error instanceof Error ? error.message : "The local backtest service could not complete that request."; }
 function strategyID(config: StrategyConfig): StrategyID { return config.strategyId ?? "RECOVERY_BREAKOUT"; }
 function strategyName(id: StrategyID | undefined): string { return id === "DIP_ACCUMULATION" ? "Dip Accumulation" : "Recovery Breakout"; }
-function activeConfig(settings: AssetStrategySettings): StrategyConfig { return settings.selectedStrategyId === "DIP_ACCUMULATION" ? settings.dipAccumulation : settings.recoveryBreakout; }
+function configForStrategy(settings: AssetStrategySettings, id: StrategyID): StrategyConfig { return id === "DIP_ACCUMULATION" ? settings.dipAccumulation : settings.recoveryBreakout; }
 
 function validateConfig(config: StrategyConfig): string | null {
   if (sharedFields.some(({ field }) => !Number.isFinite(config[field]))) return "Every strategy setting must be a finite number.";
@@ -59,6 +59,7 @@ function validateRun(config: StrategyConfig | null, candleSet: BacktestCandleSet
 export function BacktestPage() {
   const [asset, setAsset] = useState<AssetSymbol>("BTC");
   const [profiles, setProfiles] = useState<Record<AssetSymbol, AssetStrategySettings | null>>({ BTC: null, ETH: null });
+  const [backtestStrategies, setBacktestStrategies] = useState<Record<AssetSymbol, StrategyID>>({ BTC: "RECOVERY_BREAKOUT", ETH: "RECOVERY_BREAKOUT" });
   const [candleSets, setCandleSets] = useState<BacktestCandleSet[]>([]);
   const [selectedSetID, setSelectedSetID] = useState("");
   const [config, setConfig] = useState<StrategyConfig | null>(null);
@@ -86,7 +87,8 @@ export function BacktestPage() {
     void Promise.all([api.strategySettings(), api.backtests()]).then(([loadedProfiles, loadedRuns]) => {
       if (!active) return;
       setProfiles({ BTC: loadedProfiles.BTC, ETH: loadedProfiles.ETH });
-      setConfig({ ...activeConfig(loadedProfiles.BTC) });
+      setBacktestStrategies({ BTC: loadedProfiles.BTC.selectedStrategyId, ETH: loadedProfiles.ETH.selectedStrategyId });
+      setConfig({ ...configForStrategy(loadedProfiles.BTC, loadedProfiles.BTC.selectedStrategyId) });
       setRuns(loadedRuns);
       setIsLoading(false);
     }, (loadError: unknown) => { if (active) { setError(displayError(loadError)); setIsLoading(false); } });
@@ -96,7 +98,7 @@ export function BacktestPage() {
   useEffect(() => {
     let active = true;
     setSelectedSetID(""); setStart(""); setEnd(""); setResult(null); setError(null); setNotice(null);
-    if (profiles[asset]) setConfig({ ...activeConfig(profiles[asset]!) });
+    if (profiles[asset]) setConfig({ ...configForStrategy(profiles[asset]!, backtestStrategies[asset]) });
     void api.backtestCandleSets(asset).then((sets) => {
       if (!active) return;
       setCandleSets(sets);
@@ -109,6 +111,15 @@ export function BacktestPage() {
 
   function selectCandleSet(set: BacktestCandleSet) { setSelectedSetID(set.id); setStart(warmupStart(set)); setEnd(dateValue(set.lastTimestamp)); }
   function selectAsset(candidate: AssetSymbol) { setAsset(candidate); }
+  function selectBacktestStrategy(candidate: StrategyID) {
+    const profile = profiles[asset];
+    if (!profile) return;
+    setBacktestStrategies((current) => ({ ...current, [asset]: candidate }));
+    setConfig({ ...configForStrategy(profile, candidate) });
+    setResult(null);
+    setError(null);
+    setNotice(null);
+  }
 
   async function importCSV(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setError(null); setNotice(null);
@@ -151,6 +162,7 @@ export function BacktestPage() {
     <header className="page-header"><div><p className="eyebrow">Separate hypothetical module</p><h1>Backtests</h1></div><p className="page-note">Historical simulations never alter your live portfolio, advisory history, or strategy state.</p></header>
     <section className="backtest-disclosure"><strong>Hypothetical simulation using completed UTC daily candles.</strong><span>Not investment advice. Past results do not predict future results. Fills use the next daily open, include fees and slippage, and exclude taxes.</span></section>
     <div aria-label="Backtest asset" className="asset-tabs" role="tablist">{assets.map((candidate) => <button aria-selected={asset === candidate} className={asset === candidate ? "asset-tab asset-tab--active" : "asset-tab"} key={candidate} onClick={() => selectAsset(candidate)} role="tab" type="button">{candidate}</button>)}</div>
+    <section className="backtest-strategy-picker"><label className="field"><span>Strategy for this simulation</span><select aria-label="Strategy for this simulation" onChange={(event) => selectBacktestStrategy(event.target.value as StrategyID)} value={backtestStrategies[asset]}><option value="RECOVERY_BREAKOUT">Recovery Breakout</option><option value="DIP_ACCUMULATION">Dip Accumulation</option></select></label><p><strong>Live {asset} assistance:</strong> {profiles[asset] ? strategyName(profiles[asset]!.selectedStrategyId) : "Loading"}. Changing this selector only changes the run-local snapshot.</p></section>
     {error && <p className="form-message form-message--error" role="alert">{error}</p>}
     {notice && <p className="form-message form-message--success" role="status">{notice}</p>}
 

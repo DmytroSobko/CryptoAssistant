@@ -128,8 +128,9 @@ strategy state, live advisory History, or live market snapshots.
 
 Choose a CSV file and give it a meaningful source label, such as `Coinbase
 daily export`. After import, select its date range, starting cash, fees,
-slippage, and a run-local copy of the asset's currently selected strategy
-settings. Editing that copy does not save or overwrite the live BTC/ETH
+slippage, and a run-local strategy. It defaults to the asset's currently
+selected assistance strategy, but you may choose either strategy for a test;
+that choice and all snapshot edits do not save or overwrite the live BTC/ETH
 strategy configuration. For Dip Accumulation, the first-entry reference is the
 actual simulated Entry 1 fill. A later drawdown sale is shown as
 `REJECTED BREAK EVEN FLOOR` if the simulated next-open net proceeds are below
