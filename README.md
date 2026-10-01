@@ -13,7 +13,8 @@ place orders, or execute trades.
 - Evaluates one selected deterministic, explainable strategy per asset using
   only completed daily candles. `Recovery Breakout` is the original staged
   recovery strategy; `Dip Accumulation` confirms the same first entry, then
-  averages down from that reference and protects drawdown exits at break-even.
+  averages down from that reference, takes configured profit, and protects
+  later drawdown exits at break-even.
 - Stores strategy state and idempotent BUY/SELL advisory history locally.
 - Lets you manually maintain BTC/ETH positions, average entry prices, cash,
   and allocation values.
@@ -114,8 +115,9 @@ not change the other asset or execute a trade.
 
 Dip Accumulation uses the normal recovery/trend gate for Entry 1. Entries 2
 and 3 then occur at configured dips below the fixed first-entry reference
-(defaults: 10% and 20%). Its drawdown exits require estimated net proceeds to
-meet the remaining weighted-average entry price. This can keep an underwater
+(defaults: 10% and 20%). It must first reach its configured profit target;
+only then do drawdown exits activate, requiring estimated net proceeds to meet
+the remaining weighted-average entry price. This can keep an underwater
 position open for a long time; it does not guarantee a profitable campaign or
 a manual market-order fill.
 

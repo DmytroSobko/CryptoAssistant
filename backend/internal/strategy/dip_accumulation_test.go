@@ -84,19 +84,25 @@ func TestDipAccumulationUsesCompletedCloseForDipEntry(t *testing.T) {
 	}
 }
 
-func TestDipAccumulationResumesConfiguredDrawdownExitsAfterFinalEntry(t *testing.T) {
+func TestDipAccumulationDefersDrawdownUntilProfitMilestone(t *testing.T) {
 	config := dipAccumulationConfig()
 	state := PersistedState{Asset: "BTC", CurrentState: StateFullPosition, EntryStep: 3, FirstEntryReferencePrice: 100, HighestPrice: 120, PositionOpen: true}
-	position := portfolio.Asset{Symbol: "BTC", Quantity: 1, AverageEntryPrice: 90}
+	position := portfolio.Asset{Symbol: "BTC", Quantity: 1, AverageEntryPrice: 100}
 	result, next := Evaluate(candleFixture([]float64{100, 102}), position, config, state)
+	if result.Action != ActionHold || next.Drawdown2Triggered || next.ProfitTaken {
+		t.Fatalf("pre-profit drawdown result=%+v state=%+v; want protected hold", result, next)
+	}
+
+	state.ProfitTaken = true
+	result, next = Evaluate(candleFixture([]float64{100, 102}), position, config, state)
 	if result.Action != ActionSellDrawdown || result.ActionPct != config.Drawdown2SellPct || !next.Drawdown2Triggered {
-		t.Fatalf("post-entry drawdown result=%+v state=%+v; want the configured drawdown exit", result, next)
+		t.Fatalf("post-profit drawdown result=%+v state=%+v; want the configured drawdown exit", result, next)
 	}
 }
 
 func TestDipAccumulationBreakEvenFloorBlocksBelowCostDrawdownExit(t *testing.T) {
 	config := dipAccumulationConfig()
-	state := PersistedState{Asset: "BTC", CurrentState: StateFullPosition, EntryStep: 3, FirstEntryReferencePrice: 100, HighestPrice: 120, PositionOpen: true}
+	state := PersistedState{Asset: "BTC", CurrentState: StateFullPosition, EntryStep: 3, FirstEntryReferencePrice: 100, HighestPrice: 120, PositionOpen: true, ProfitTaken: true}
 	position := portfolio.Asset{Symbol: "BTC", Quantity: 1, AverageEntryPrice: 100}
 	result, next := Evaluate(candleFixture([]float64{100, 99}), position, config, state)
 	if result.Action != ActionHold || result.BreakEvenFloorNetPrice != 100 || result.BreakEvenFloorGrossPrice <= 100 || next.Drawdown1Triggered {

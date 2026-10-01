@@ -67,26 +67,10 @@ func evaluateDipAccumulation(candles []market.Candle, position portfolio.Asset, 
 				nextCondition), state
 		}
 
-		if sellPct, level, triggered := drawdownAction(config, state.DrawdownPct, state); triggered {
-			floorNet, floorGross := dipBreakEvenFloor(config, position.AverageEntryPrice)
-			if floorNet > 0 && price*(1-config.EstimatedSellFeeBps/10000) < floorNet {
-				state.CurrentState = dipHoldingState(state)
-				result.BreakEvenFloorNetPrice = floorNet
-				result.BreakEvenFloorGrossPrice = floorGross
-				return holdResult(result, state, config,
-					fmt.Sprintf("Drawdown exit withheld: the %.2f completed close is below the estimated break-even sale floor of %.2f.", price, floorGross),
-					fmt.Sprintf("Hold until a completed close supports a sale at or above %.2f before fees.", floorGross)), state
-			}
-			state = markDrawdownTriggered(state, level)
-			state.CurrentState = StateExiting
-			result = actionResult(result, state, config, ActionSellDrawdown, sellPct,
-				fmt.Sprintf("Completed daily close is %.2f%% below the %.2f high-water mark.", -state.DrawdownPct, state.HighestPrice),
-				"Update the manually managed position after any sale.")
-			result.BreakEvenFloorNetPrice = floorNet
-			result.BreakEvenFloorGrossPrice = floorGross
-			return result, state
-		}
-
+		// A Dip Accumulation campaign must first realise its configured profit
+		// take. Only that milestone enables subsequent trailing drawdown exits.
+		// This prevents a merely break-even drawdown sale from closing coins
+		// before the strategy has ever reached its profit objective.
 		if !state.ProfitTaken && finitePositive(position.AverageEntryPrice) && validPositivePercentage(config.ProfitTakePct) &&
 			finitePositive(config.ProfitTrigger1Pct) && result.ProfitLossPct >= config.ProfitTrigger1Pct {
 			state.ProfitTaken = true
@@ -94,6 +78,28 @@ func evaluateDipAccumulation(candles []market.Candle, position portfolio.Asset, 
 			return actionResult(result, state, config, ActionSellProfit, config.ProfitTakePct,
 				fmt.Sprintf("P/L is %.2f%%, at or above the configured %.2f%% profit trigger.", result.ProfitLossPct, config.ProfitTrigger1Pct),
 				"Hold the remaining position and watch completed-candle drawdown exits."), state
+		}
+
+		if state.ProfitTaken {
+			if sellPct, level, triggered := drawdownAction(config, state.DrawdownPct, state); triggered {
+				floorNet, floorGross := dipBreakEvenFloor(config, position.AverageEntryPrice)
+				if floorNet > 0 && price*(1-config.EstimatedSellFeeBps/10000) < floorNet {
+					state.CurrentState = dipHoldingState(state)
+					result.BreakEvenFloorNetPrice = floorNet
+					result.BreakEvenFloorGrossPrice = floorGross
+					return holdResult(result, state, config,
+						fmt.Sprintf("Drawdown exit withheld: the %.2f completed close is below the estimated break-even sale floor of %.2f.", price, floorGross),
+						fmt.Sprintf("Hold until a completed close supports a sale at or above %.2f before fees.", floorGross)), state
+				}
+				state = markDrawdownTriggered(state, level)
+				state.CurrentState = StateExiting
+				result = actionResult(result, state, config, ActionSellDrawdown, sellPct,
+					fmt.Sprintf("Completed daily close is %.2f%% below the %.2f high-water mark.", -state.DrawdownPct, state.HighestPrice),
+					"Update the manually managed position after any sale.")
+				result.BreakEvenFloorNetPrice = floorNet
+				result.BreakEvenFloorGrossPrice = floorGross
+				return result, state
+			}
 		}
 	}
 
@@ -104,6 +110,12 @@ func evaluateDipAccumulation(candles []market.Candle, position portfolio.Asset, 
 		return holdResult(result, state, config, "A manually managed position is open.", "Watch profit protection and drawdown conditions."), state
 	}
 	if state.EntryStep >= 3 {
+		if !state.ProfitTaken {
+			state.CurrentState = StateFullPosition
+			return holdResult(result, state, config,
+				"Drawdown exits remain inactive until the first profit target is reached.",
+				fmt.Sprintf("Wait for a completed daily close at or above %.2f (the %.2f%% profit trigger).", position.AverageEntryPrice*(1+config.ProfitTrigger1Pct/100), config.ProfitTrigger1Pct)), state
+		}
 		if state.CurrentState != StateProfitProtection && state.CurrentState != StateExiting {
 			state.CurrentState = StateFullPosition
 		}
