@@ -18,6 +18,7 @@ interface ProfileForm {
   selectedStrategyId: StrategyID;
   recoveryBreakout: ConfigForm;
   dipAccumulation: ConfigForm;
+  athEntryOverride: { enabled: boolean; thresholdPct: string };
 }
 
 interface FieldDefinition {
@@ -83,6 +84,7 @@ function formFromSettings(settings: AssetStrategySettings): ProfileForm {
     selectedStrategyId: settings.selectedStrategyId,
     recoveryBreakout: formFromConfig(settings.recoveryBreakout),
     dipAccumulation: formFromConfig(settings.dipAccumulation),
+    athEntryOverride: { enabled: settings.athEntryOverride?.enabled ?? false, thresholdPct: String(settings.athEntryOverride?.thresholdPct ?? 60) },
   };
 }
 
@@ -127,7 +129,14 @@ function configFromForm(form: ConfigForm, strategyId: StrategyID): StrategyConfi
 }
 
 function settingsFromForm(form: ProfileForm): AssetStrategySettings {
-  return { selectedStrategyId: form.selectedStrategyId, recoveryBreakout: configFromForm(form.recoveryBreakout, "RECOVERY_BREAKOUT"), dipAccumulation: configFromForm(form.dipAccumulation, "DIP_ACCUMULATION") };
+  const thresholdPct = numberValue(form.athEntryOverride.thresholdPct, "Historical-peak threshold");
+  if (thresholdPct <= 0 || thresholdPct > 100) throw new Error("Historical-peak threshold must be greater than 0 and at most 100%.");
+  return {
+    selectedStrategyId: form.selectedStrategyId,
+    recoveryBreakout: configFromForm(form.recoveryBreakout, "RECOVERY_BREAKOUT"),
+    dipAccumulation: configFromForm(form.dipAccumulation, "DIP_ACCUMULATION"),
+    athEntryOverride: { enabled: form.athEntryOverride.enabled, thresholdPct },
+  };
 }
 
 function NumberFields({ fields, form, onChange }: { fields: FieldDefinition[]; form: ConfigForm; onChange: (field: NumericField, value: string) => void }) {
@@ -169,6 +178,7 @@ export function StrategySettingsPage() {
   });
   const selectAsset = (asset: AssetSymbol) => { setSelectedAsset(asset); setError(null); setSaved(false); };
   const selectStrategy = (selectedStrategyId: StrategyID) => { setForms((current) => current[selectedAsset] ? { ...current, [selectedAsset]: { ...current[selectedAsset]!, selectedStrategyId } } : current); setError(null); setSaved(false); };
+  const updateATHOverride = (change: Partial<ProfileForm["athEntryOverride"]>) => setForms((current) => current[selectedAsset] ? { ...current, [selectedAsset]: { ...current[selectedAsset]!, athEntryOverride: { ...current[selectedAsset]!.athEntryOverride, ...change } } } : current);
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -186,6 +196,7 @@ export function StrategySettingsPage() {
     <header className="page-header"><div><p className="eyebrow">Deterministic rules</p><h1>Strategy settings</h1></div><p className="page-note">Changes affect future advisory evaluations only. They never execute a trade.</p></header>
     <div aria-label="Asset settings" className="asset-tabs" role="tablist">{(["BTC", "ETH"] as AssetSymbol[]).map((asset) => <button aria-selected={selectedAsset === asset} className={selectedAsset === asset ? "asset-tab asset-tab--active" : "asset-tab"} key={asset} onClick={() => selectAsset(asset)} role="tab" type="button">{asset}</button>)}</div>
     <form className="settings-form" onSubmit={save}>
+      <section className="settings-section"><h2>Historical-peak entry override</h2><p className="settings-help">This per-asset rule applies before either strategy’s normal first-entry gate. On a fresh cash cycle, it gives one normal Entry 1 when the completed daily close is at or below the selected percentage of the highest daily high available before that day.</p><label className="checkbox-field"><input checked={profile.athEntryOverride.enabled} onChange={(event) => updateATHOverride({ enabled: event.target.checked })} type="checkbox" /> Enable historical-peak entry for {selectedAsset}</label><label className="field"><span>Buy at or below (% of prior historical peak)</span><input aria-label="Historical-peak entry threshold" disabled={!profile.athEntryOverride.enabled} max="100" min="0.0001" onChange={(event) => updateATHOverride({ thresholdPct: event.target.value })} step="any" type="number" value={profile.athEntryOverride.thresholdPct} /></label><p className="settings-disclosure">Uses completed UTC daily closes and the bundled 10-year daily history (from 2016-09-30 onward). It does not inspect future prices. After it opens a position, normal strategy rules control the remaining entries and all exits.</p></section>
       <section className="settings-section strategy-selector"><div><h2>Strategy</h2><p className="settings-help">Choose the single ruleset that produces future {selectedAsset} advisories. Each strategy keeps its own saved settings.</p></div><label className="field"><span>Active strategy for {selectedAsset}</span><select aria-label={`Active strategy for ${selectedAsset}`} onChange={(event) => selectStrategy(event.target.value as StrategyID)} value={profile.selectedStrategyId}><option value="RECOVERY_BREAKOUT">Recovery Breakout</option><option value="DIP_ACCUMULATION">Dip Accumulation</option></select></label><p className="strategy-description">{isDipAccumulation ? "Confirms an initial recovery entry, then averages down at fixed percentages below that first-entry reference. Drawdown exits are held to break-even after estimated fees." : "Uses the existing recovery-breakout rules for each staged entry and preserves the MVP sell behaviour."}</p></section>
       <section className="settings-section"><h2>Initial entry confirmation</h2><p className="settings-help">Both strategies require this correction, recovery, and trend gate before their first entry.</p><label className="field"><span>Trend mode</span><select aria-label="Trend filter mode" onChange={(event) => updateTrendMode(event.target.value as StrategyConfig["trendMode"])} value={form.trendMode}><option value="STRICT">STRICT — close must be above SMA200</option><option value="RECOVERY">RECOVERY — allow a confirmed recovery below SMA200</option><option value="OFF">OFF — do not use the SMA200 filter</option></select></label><NumberFields fields={initialEntryFields} form={form} onChange={updateField} /></section>
       <div className="settings-grid">

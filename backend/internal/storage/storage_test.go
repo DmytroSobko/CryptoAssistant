@@ -194,6 +194,9 @@ func TestPerAssetStrategyProfilesKeepConfigurationsAndStatesIndependent(t *testi
 	if profile.SelectedStrategyID != strategy.StrategyRecoveryBreakout || profile.RecoveryBreakout.StrategyID != strategy.StrategyRecoveryBreakout || profile.DipAccumulation.StrategyID != strategy.StrategyDipAccumulation {
 		t.Fatalf("unexpected migrated BTC profile: %+v", profile)
 	}
+	if profile.ATHEntryOverride.Enabled || profile.ATHEntryOverride.ThresholdPct != 60 {
+		t.Fatalf("unexpected default BTC ATH entry override: %+v", profile.ATHEntryOverride)
+	}
 
 	recoveryState := strategy.PersistedState{Asset: "BTC", StrategyID: strategy.StrategyRecoveryBreakout, CurrentState: strategy.StatePartialPosition, EntryStep: 1}
 	if err := store.SaveStrategyState(context.Background(), recoveryState); err != nil {
@@ -201,12 +204,21 @@ func TestPerAssetStrategyProfilesKeepConfigurationsAndStatesIndependent(t *testi
 	}
 	profile.SelectedStrategyID = strategy.StrategyDipAccumulation
 	profile.DipAccumulation.Entry1Pct = 35
+	profile.ATHEntryOverride = strategy.ATHEntryOverrideSettings{Enabled: true, ThresholdPct: 55}
 	if err := store.SaveAssetStrategySettings(context.Background(), "BTC", profile); err != nil {
 		t.Fatal(err)
 	}
 	active, err := store.GetStrategyConfig(context.Background(), "BTC")
 	if err != nil || active.StrategyID != strategy.StrategyDipAccumulation || active.Entry1Pct != 35 {
 		t.Fatalf("active Dip Accumulation config=%+v err=%v", active, err)
+	}
+	storedProfile, err := store.GetAssetStrategySettings(context.Background(), "BTC")
+	if err != nil || !storedProfile.ATHEntryOverride.Enabled || storedProfile.ATHEntryOverride.ThresholdPct != 55 {
+		t.Fatalf("stored BTC ATH entry override=%+v err=%v", storedProfile.ATHEntryOverride, err)
+	}
+	ethProfile, err := store.GetAssetStrategySettings(context.Background(), "ETH")
+	if err != nil || ethProfile.ATHEntryOverride.Enabled || ethProfile.ATHEntryOverride.ThresholdPct != 60 {
+		t.Fatalf("ETH override was changed with BTC: %+v err=%v", ethProfile.ATHEntryOverride, err)
 	}
 	dipState, err := store.GetStrategyState(context.Background(), "BTC")
 	if err != nil || dipState.StrategyID != strategy.StrategyDipAccumulation || dipState.EntryStep != 0 {

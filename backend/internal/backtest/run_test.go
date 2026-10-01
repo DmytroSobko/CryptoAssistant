@@ -86,6 +86,37 @@ func TestRunFillsAtNextDailyOpenWithoutLookahead(t *testing.T) {
 	}
 }
 
+func TestRunATHOverrideDoesNotUseSameDayOrFutureHigh(t *testing.T) {
+	start := time.Date(2010, 1, 1, 0, 0, 0, 0, time.UTC)
+	candles := make([]market.Candle, 0, 204)
+	for index := 0; index < 200; index++ {
+		candles = append(candles, candleAtDate(start.AddDate(0, 0, index), 100))
+	}
+	// This completed close is below 60% of the known 101 high. Its own high
+	// is deliberately much larger and must not be used for this decision.
+	decision := candleAtDate(start.AddDate(0, 0, 200), 60)
+	decision.High = 1_000
+	candles = append(candles, decision, candleAtDate(start.AddDate(0, 0, 201), 60), candleAtDate(start.AddDate(0, 0, 202), 60), candleAtDate(start.AddDate(0, 0, 203), 60))
+	request := fixtureRequest(candles, 199, len(candles)-1)
+	request.StrategyConfig.ATHEntryOverrideEnabled = true
+	request.StrategyConfig.ATHEntryThresholdPct = 60
+
+	result, err := Run(request, candles)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var signal Signal
+	for _, candidate := range result.Signals {
+		if candidate.Timestamp.Equal(decision.Timestamp) {
+			signal = candidate
+			break
+		}
+	}
+	if signal.Action != strategy.ActionBuy40 || signal.DecisionClose != 60 {
+		t.Fatalf("ATH override used same-day high or did not enter: %+v", signal)
+	}
+}
+
 func TestRunRecordsEndOfDataActionWithoutAFill(t *testing.T) {
 	candles := entryFixture()
 	request := fixtureRequest(candles, 199, len(candles)-3) // The breakout candle is now the final decision candle.
@@ -140,5 +171,9 @@ func testConfig() strategy.Config {
 
 func candleAt(index int, price float64) market.Candle {
 	stamp := time.Date(2020, 1, 1+index, 0, 0, 0, 0, time.UTC)
+	return candleAtDate(stamp, price)
+}
+
+func candleAtDate(stamp time.Time, price float64) market.Candle {
 	return market.Candle{Timestamp: stamp, Open: price, High: price + 1, Low: price - 1, Close: price, Volume: 1}
 }

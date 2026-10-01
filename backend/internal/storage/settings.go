@@ -32,6 +32,7 @@ func DefaultAssetStrategySettings(symbol string) strategy.AssetStrategySettings 
 		SelectedStrategyID: strategy.StrategyRecoveryBreakout,
 		RecoveryBreakout:   DefaultStrategyConfig(symbol),
 		DipAccumulation:    DefaultDipAccumulationConfig(symbol),
+		ATHEntryOverride:   strategy.ATHEntryOverrideSettings{Enabled: false, ThresholdPct: 60},
 	}
 }
 
@@ -67,8 +68,8 @@ func getAssetStrategySettings(ctx context.Context, db queryRower, symbol string)
 	if err != nil {
 		return strategy.AssetStrategySettings{}, err
 	}
-	var selected, recoveryJSON, dipJSON string
-	err = db.QueryRowContext(ctx, `SELECT selected_strategy_id, recovery_breakout_config_json, dip_accumulation_config_json FROM asset_strategy_settings WHERE asset = ?`, asset).Scan(&selected, &recoveryJSON, &dipJSON)
+	var selected, recoveryJSON, dipJSON, overrideJSON string
+	err = db.QueryRowContext(ctx, `SELECT selected_strategy_id, recovery_breakout_config_json, dip_accumulation_config_json, ath_entry_override_json FROM asset_strategy_settings WHERE asset = ?`, asset).Scan(&selected, &recoveryJSON, &dipJSON, &overrideJSON)
 	if errors.Is(err, sql.ErrNoRows) {
 		return DefaultAssetStrategySettings(asset).Normalized()
 	}
@@ -81,6 +82,9 @@ func getAssetStrategySettings(ctx context.Context, db queryRower, symbol string)
 	}
 	if err := json.Unmarshal([]byte(dipJSON), &settings.DipAccumulation); err != nil {
 		return strategy.AssetStrategySettings{}, fmt.Errorf("decode %s dip accumulation settings: %w", asset, err)
+	}
+	if err := json.Unmarshal([]byte(overrideJSON), &settings.ATHEntryOverride); err != nil {
+		return strategy.AssetStrategySettings{}, fmt.Errorf("decode %s ATH entry override settings: %w", asset, err)
 	}
 	normalized, err := settings.Normalized()
 	if err != nil {
@@ -110,7 +114,11 @@ func (s *Store) SaveAssetStrategySettings(ctx context.Context, symbol string, se
 	if err != nil {
 		return fmt.Errorf("encode dip accumulation settings: %w", err)
 	}
-	if _, err := s.db.ExecContext(ctx, `INSERT INTO asset_strategy_settings(asset, selected_strategy_id, recovery_breakout_config_json, dip_accumulation_config_json, updated_at) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP) ON CONFLICT(asset) DO UPDATE SET selected_strategy_id = excluded.selected_strategy_id, recovery_breakout_config_json = excluded.recovery_breakout_config_json, dip_accumulation_config_json = excluded.dip_accumulation_config_json, updated_at = CURRENT_TIMESTAMP`, asset, normalized.SelectedStrategyID, string(recoveryJSON), string(dipJSON)); err != nil {
+	overrideJSON, err := json.Marshal(normalized.ATHEntryOverride)
+	if err != nil {
+		return fmt.Errorf("encode ATH entry override settings: %w", err)
+	}
+	if _, err := s.db.ExecContext(ctx, `INSERT INTO asset_strategy_settings(asset, selected_strategy_id, recovery_breakout_config_json, dip_accumulation_config_json, ath_entry_override_json, updated_at) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP) ON CONFLICT(asset) DO UPDATE SET selected_strategy_id = excluded.selected_strategy_id, recovery_breakout_config_json = excluded.recovery_breakout_config_json, dip_accumulation_config_json = excluded.dip_accumulation_config_json, ath_entry_override_json = excluded.ath_entry_override_json, updated_at = CURRENT_TIMESTAMP`, asset, normalized.SelectedStrategyID, string(recoveryJSON), string(dipJSON), string(overrideJSON)); err != nil {
 		return fmt.Errorf("save %s strategy settings: %w", asset, err)
 	}
 	if previous.SelectedStrategyID != normalized.SelectedStrategyID {

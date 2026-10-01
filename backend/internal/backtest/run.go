@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/dmytrosobko/crypto-strategy-assistant/backend/internal/ath"
 	"github.com/dmytrosobko/crypto-strategy-assistant/backend/internal/market"
 	"github.com/dmytrosobko/crypto-strategy-assistant/backend/internal/strategy"
 )
@@ -59,6 +60,22 @@ func Run(request Request, candles []market.Candle) (Result, error) {
 		result.EquityCurve = append(result.EquityCurve, point)
 
 		previousStrategyState := state.StrategyState
+		if evaluationConfig.ATHEntryOverrideEnabled {
+			peak, found, peakErr := ath.PeakBefore(request.Asset, candle.Timestamp)
+			if peakErr != nil {
+				return Result{}, peakErr
+			}
+			for _, prior := range candles[:index] {
+				if prior.High > peak {
+					peak, found = prior.High, true
+				}
+			}
+			if found {
+				evaluationConfig.ATHReferencePeak = peak
+			} else {
+				evaluationConfig.ATHReferencePeak = 0
+			}
+		}
 		decision, nextState := strategy.Evaluate(candles[:index+1], state.Position, evaluationConfig, previousStrategyState)
 		state.StrategyState = nextState
 		signal := Signal{Sequence: len(result.Signals) + 1, Timestamp: candle.Timestamp, DecisionClose: candle.Close, Action: decision.Action, ActionPct: decision.ActionPct, StrategyState: decision.State, Reason: decision.Reason, NextCondition: decision.NextCondition, OrderStatus: "NO_ORDER", BreakEvenFloorNetPrice: decision.BreakEvenFloorNetPrice}
@@ -92,6 +109,11 @@ func assumptionsFor(request Request) Assumptions {
 	} else {
 		assumptions.ReferencePricePolicy = "Recovery Breakout does not use a fixed first-entry dip reference price."
 		assumptions.BreakEvenExitFloor = "Not enabled for Recovery Breakout."
+	}
+	if request.StrategyConfig.ATHEntryOverrideEnabled {
+		assumptions.ATHEntryOverride = fmt.Sprintf("Enabled: on a fresh cash cycle, one Entry 1 is signalled when the completed daily close is at or below %.2f%% of the highest daily high known before that day.", request.StrategyConfig.ATHEntryThresholdPct)
+	} else {
+		assumptions.ATHEntryOverride = "Historical-peak Entry 1 override disabled for this run."
 	}
 	return assumptions
 }

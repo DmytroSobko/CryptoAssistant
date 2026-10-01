@@ -8,6 +8,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/dmytrosobko/crypto-strategy-assistant/backend/internal/ath"
 	"github.com/dmytrosobko/crypto-strategy-assistant/backend/internal/market"
 	"github.com/dmytrosobko/crypto-strategy-assistant/backend/internal/portfolio"
 	"github.com/dmytrosobko/crypto-strategy-assistant/backend/internal/strategy"
@@ -88,9 +89,29 @@ func strategyEvaluationInput(ctx context.Context, tx *sql.Tx, asset string) (Str
 			return StrategyEvaluationInput{}, fmt.Errorf("parse %s portfolio timestamp: %w", asset, err)
 		}
 	}
-	config, err := getStrategyConfig(ctx, tx, asset)
+	settings, err := getAssetStrategySettings(ctx, tx, asset)
 	if err != nil {
-		return StrategyEvaluationInput{}, fmt.Errorf("load %s strategy config: %w", asset, err)
+		return StrategyEvaluationInput{}, fmt.Errorf("load %s strategy settings: %w", asset, err)
+	}
+	config, err := settings.ActiveConfig()
+	if err != nil {
+		return StrategyEvaluationInput{}, fmt.Errorf("resolve %s strategy config: %w", asset, err)
+	}
+	config.ATHEntryOverrideEnabled = settings.ATHEntryOverride.Enabled
+	config.ATHEntryThresholdPct = settings.ATHEntryOverride.ThresholdPct
+	if len(candles) > 0 {
+		peak, found, peakErr := ath.PeakBefore(asset, candles[len(candles)-1].Timestamp)
+		if peakErr != nil {
+			return StrategyEvaluationInput{}, peakErr
+		}
+		for _, candle := range candles[:len(candles)-1] {
+			if candle.High > peak {
+				peak, found = candle.High, true
+			}
+		}
+		if found {
+			config.ATHReferencePeak = peak
+		}
 	}
 	state, err := getStrategyState(ctx, tx, asset)
 	if err != nil {

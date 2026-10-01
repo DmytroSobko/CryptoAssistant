@@ -13,7 +13,12 @@ func ValidateConfig(config Config) error {
 		return err
 	}
 	if strategyID == StrategyDipAccumulation {
-		return validateDipAccumulationConfig(config)
+		if err := validateDipAccumulationConfig(config); err != nil {
+			return err
+		}
+	}
+	if config.ATHEntryOverrideEnabled && !validPositivePercentage(config.ATHEntryThresholdPct) {
+		return fmt.Errorf("ATH entry override threshold must be greater than 0 and at most 100")
 	}
 	return nil
 }

@@ -21,6 +21,13 @@ func TestValidateConfig(t *testing.T) {
 		{"reversed profit triggers", func() Config { cfg := valid; cfg.ProfitTrigger2Pct = 5; return cfg }(), false},
 		{"shallow second drawdown", func() Config { cfg := valid; cfg.Drawdown2Pct = -5; return cfg }(), false},
 		{"non-finite", func() Config { cfg := valid; cfg.ProfitTakePct = math.NaN(); return cfg }(), false},
+		{"enabled ATH override missing threshold", func() Config { cfg := valid; cfg.ATHEntryOverrideEnabled = true; return cfg }(), false},
+		{"enabled ATH override valid threshold", func() Config {
+			cfg := valid
+			cfg.ATHEntryOverrideEnabled = true
+			cfg.ATHEntryThresholdPct = 60
+			return cfg
+		}(), true},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

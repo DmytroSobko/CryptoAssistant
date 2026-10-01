@@ -135,6 +135,7 @@ func TestStrategySettingsEndpointsSelectAnAssetStrategyWithoutChangingTheOtherAs
 	eth := profiles["ETH"]
 	btc.SelectedStrategyID = strategy.StrategyDipAccumulation
 	btc.DipAccumulation.Entry1Pct = 35
+	btc.ATHEntryOverride = strategy.ATHEntryOverrideSettings{Enabled: true, ThresholdPct: 55}
 	body, err := json.Marshal(btc)
 	if err != nil {
 		t.Fatal(err)
@@ -151,7 +152,7 @@ func TestStrategySettingsEndpointsSelectAnAssetStrategyWithoutChangingTheOtherAs
 	if err := json.Unmarshal(loaded.Body.Bytes(), &profiles); err != nil {
 		t.Fatal(err)
 	}
-	if profiles["BTC"].SelectedStrategyID != strategy.StrategyDipAccumulation || profiles["BTC"].DipAccumulation.Entry1Pct != 35 || profiles["ETH"] != eth {
+	if profiles["BTC"].SelectedStrategyID != strategy.StrategyDipAccumulation || profiles["BTC"].DipAccumulation.Entry1Pct != 35 || !profiles["BTC"].ATHEntryOverride.Enabled || profiles["BTC"].ATHEntryOverride.ThresholdPct != 55 || profiles["ETH"] != eth {
 		t.Fatalf("profiles after BTC selection=%+v", profiles)
 	}
 

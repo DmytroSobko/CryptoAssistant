@@ -2,6 +2,11 @@ package strategy
 
 import "fmt"
 
+type ATHEntryOverrideSettings struct {
+	Enabled      bool    `json:"enabled"`
+	ThresholdPct float64 `json:"thresholdPct"`
+}
+
 // ResolvedStrategyID maps configurations created before strategy selection to
 // the unchanged MVP ruleset. Callers that persist settings should use an
 // explicit ID; this method exists so old saved JSON remains valid.
@@ -25,9 +30,10 @@ func validStrategyID(id StrategyID) bool {
 // API will persist in a later phase. Defining and validating it here keeps
 // strategy choice entirely inside the pure domain layer.
 type AssetStrategySettings struct {
-	SelectedStrategyID StrategyID `json:"selectedStrategyId"`
-	RecoveryBreakout   Config     `json:"recoveryBreakout"`
-	DipAccumulation    Config     `json:"dipAccumulation"`
+	SelectedStrategyID StrategyID               `json:"selectedStrategyId"`
+	RecoveryBreakout   Config                   `json:"recoveryBreakout"`
+	DipAccumulation    Config                   `json:"dipAccumulation"`
+	ATHEntryOverride   ATHEntryOverrideSettings `json:"athEntryOverride"`
 }
 
 // ActiveConfig returns a copy with the profile's selected ID applied. It
@@ -78,5 +84,12 @@ func (settings AssetStrategySettings) Normalized() (AssetStrategySettings, error
 	if err := ValidateConfig(dip); err != nil {
 		return AssetStrategySettings{}, fmt.Errorf("validate dip accumulation settings: %w", err)
 	}
-	return AssetStrategySettings{SelectedStrategyID: selected, RecoveryBreakout: recovery, DipAccumulation: dip}, nil
+	override := settings.ATHEntryOverride
+	if override.ThresholdPct == 0 {
+		override.ThresholdPct = 60
+	}
+	if !validPositivePercentage(override.ThresholdPct) {
+		return AssetStrategySettings{}, fmt.Errorf("ATH entry override threshold must be greater than 0 and at most 100")
+	}
+	return AssetStrategySettings{SelectedStrategyID: selected, RecoveryBreakout: recovery, DipAccumulation: dip, ATHEntryOverride: override}, nil
 }

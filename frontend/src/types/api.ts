@@ -79,12 +79,22 @@ export interface StrategyConfig {
   entry3DipFromFirstPct?: number;
   estimatedSellFeeBps?: number;
   breakEvenExitFloorEnabled?: boolean;
+  // Copied from the asset-level setting for a live evaluation or backtest run.
+  athEntryOverrideEnabled?: boolean;
+  athEntryThresholdPct?: number;
+  athReferencePeak?: number;
+}
+
+export interface ATHEntryOverrideSettings {
+  enabled: boolean;
+  thresholdPct: number;
 }
 
 export interface AssetStrategySettings {
   selectedStrategyId: StrategyID;
   recoveryBreakout: StrategyConfig;
   dipAccumulation: StrategyConfig;
+  athEntryOverride: ATHEntryOverrideSettings;
 }
 
 export type BacktestExecutionModel = "NEXT_DAILY_OPEN";
@@ -134,6 +144,7 @@ export interface BacktestAssumptions {
   profitTrigger2Implementation: string;
   referencePricePolicy: string;
   breakEvenExitFloor: string;
+  athEntryOverride?: string;
 }
 
 export interface BacktestSummary {

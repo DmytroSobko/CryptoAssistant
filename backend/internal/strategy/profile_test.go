@@ -31,6 +31,10 @@ func TestAssetStrategySettingsActiveConfigUsesSelectedStrategy(t *testing.T) {
 	if active.StrategyID != StrategyDipAccumulation || active.TrendMode != TrendModeRecovery {
 		t.Fatalf("active config=%+v; want dip accumulation settings", active)
 	}
+	normalized, err := settings.Normalized()
+	if err != nil || normalized.ATHEntryOverride.ThresholdPct != 60 || normalized.ATHEntryOverride.Enabled {
+		t.Fatalf("ATH override default=%+v err=%v; want disabled at 60%%", normalized.ATHEntryOverride, err)
+	}
 }
 
 func TestAssetStrategySettingsRejectsUnknownSelection(t *testing.T) {

@@ -37,6 +37,7 @@ type Assumptions struct {
 	ProfitTrigger2Implementation string         `json:"profitTrigger2Implementation"`
 	ReferencePricePolicy         string         `json:"referencePricePolicy"`
 	BreakEvenExitFloor           string         `json:"breakEvenExitFloor"`
+	ATHEntryOverride             string         `json:"athEntryOverride"`
 }
 
 type SimulationState struct {

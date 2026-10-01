@@ -77,6 +77,13 @@ type Config struct {
 	Entry3DipFromFirstPct     float64 `json:"entry3DipFromFirstPct,omitempty"`
 	EstimatedSellFeeBps       float64 `json:"estimatedSellFeeBps,omitempty"`
 	BreakEvenExitFloorEnabled bool    `json:"breakEvenExitFloorEnabled,omitempty"`
+
+	// ATH entry fields are injected from the per-asset global override for live
+	// evaluations, or copied into an isolated backtest request. They apply to
+	// both strategy variants and never change either nested strategy profile.
+	ATHEntryOverrideEnabled bool    `json:"athEntryOverrideEnabled,omitempty"`
+	ATHEntryThresholdPct    float64 `json:"athEntryThresholdPct,omitempty"`
+	ATHReferencePeak        float64 `json:"athReferencePeak,omitempty"`
 }
 
 // PersistedState contains only facts needed to make a subsequent evaluation
@@ -145,6 +152,10 @@ type Engine interface {
 func Evaluate(candles []market.Candle, position portfolio.Asset, config Config, previous PersistedState) (Result, PersistedState) {
 	strategyID := config.ResolvedStrategyID()
 	previous.StrategyID = strategyID
+	if result, next, ok := athEntryOverride(candles, position, config, previous); ok {
+		result.StrategyID = strategyID
+		return result, next
+	}
 	var result Result
 	var next PersistedState
 	switch strategyID {
