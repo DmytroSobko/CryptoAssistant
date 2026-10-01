@@ -174,7 +174,7 @@ func TestBacktestRunRoundTripAndAssetMismatchAreIsolated(t *testing.T) {
 		t.Fatalf("run round trip mismatch: loaded=%+v result=%+v", loaded, result)
 	}
 	list, err := store.ListBacktestRuns(context.Background(), 10)
-	if err != nil || len(list) != 1 || list[0].ID != saved.ID {
+	if err != nil || len(list) != 1 || list[0].ID != saved.ID || list[0].StrategyID != strategy.StrategyRecoveryBreakout {
 		t.Fatalf("list runs: runs=%+v err=%v", list, err)
 	}
 	mismatch := result

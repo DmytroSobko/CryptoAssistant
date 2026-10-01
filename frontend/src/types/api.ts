@@ -132,6 +132,8 @@ export interface BacktestAssumptions {
   noMarginOrBorrowing: boolean;
   taxesIncluded: boolean;
   profitTrigger2Implementation: string;
+  referencePricePolicy: string;
+  breakEvenExitFloor: string;
 }
 
 export interface BacktestSummary {
@@ -153,6 +155,7 @@ export interface BacktestSummary {
   totalFeesUsd: number;
   buyAndHoldEndingUsd: number;
   buyAndHoldReturnPct: number;
+  breakEvenFloorBlockedTradeCount: number;
 }
 
 export interface BacktestSignal {
@@ -165,6 +168,7 @@ export interface BacktestSignal {
   reason: string;
   nextCondition: string;
   orderStatus: string;
+  breakEvenFloorNetPrice?: number;
 }
 
 export interface BacktestTrade {
@@ -184,6 +188,7 @@ export interface BacktestTrade {
   cashAfterUsd: number;
   quantityAfter: number;
   averageEntryAfter: number;
+  breakEvenFloorNetPrice?: number;
   reason: string;
 }
 
@@ -225,6 +230,7 @@ export interface BacktestRunSummary {
   startingCashUsd: number;
   returnPct: number;
   maximumDrawdownPct: number;
+  strategyId?: StrategyID;
   createdAt: string;
   completedAt: string;
 }

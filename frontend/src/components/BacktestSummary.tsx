@@ -5,6 +5,8 @@ const percent = (value: number) => `${value >= 0 ? "+" : ""}${value.toFixed(2)}%
 
 export function BacktestSummary({ asset, result }: { asset: AssetSymbol; result: BacktestResult }) {
   const { summary, assumptions } = result;
+  const strategyName = result.request.strategyConfig.strategyId === "DIP_ACCUMULATION" ? "Dip Accumulation" : "Recovery Breakout";
+  const isDipAccumulation = result.request.strategyConfig.strategyId === "DIP_ACCUMULATION";
   return (
     <section className="backtest-results-section">
       <div className="backtest-section-heading"><div><p className="eyebrow">Completed simulation</p><h2>Results</h2></div><p className="backtest-fingerprint">Data fingerprint: <code>{result.dataFingerprint}</code></p></div>
@@ -17,12 +19,14 @@ export function BacktestSummary({ asset, result }: { asset: AssetSymbol; result:
         <Metric label="Total fees" value={usd.format(summary.totalFeesUsd)} />
         <Metric label="Filled orders" value={String(summary.executedTradeCount)} />
         <Metric label="Buy & hold return" tone={summary.buyAndHoldReturnPct >= 0 ? "positive" : "negative"} value={percent(summary.buyAndHoldReturnPct)} />
+        {isDipAccumulation && <Metric label="Protected exits blocked" tone={summary.breakEvenFloorBlockedTradeCount > 0 ? "negative" : undefined} value={String(summary.breakEvenFloorBlockedTradeCount)} />}
       </div>
       <div className="backtest-result-note">
         <span>{asset} · {result.request.start.slice(0, 10)} to {result.request.end.slice(0, 10)}</span>
         <span>{assumptions.executionModel.replaceAll("_", " ")} · fees {assumptions.feeBps} bps · slippage {assumptions.slippageBps} bps</span>
-        <span>Config snapshot: {result.request.strategyConfig.trendMode} · entries {result.request.strategyConfig.entry1Pct}/{result.request.strategyConfig.entry2Pct}/{result.request.strategyConfig.entry3Pct}%</span>
+        <span>Strategy: {strategyName} · {result.request.strategyConfig.trendMode} · entries {result.request.strategyConfig.entry1Pct}/{result.request.strategyConfig.entry2Pct}/{result.request.strategyConfig.entry3Pct}%</span>
         <span>Taxes excluded · {summary.rejectedTradeCount} rejected · {summary.unexecutedTradeCount} unexecuted</span>
+        {isDipAccumulation && <><span>{assumptions.referencePricePolicy}</span><span>{assumptions.breakEvenExitFloor}</span></>}
         <span>{assumptions.profitTrigger2Implementation}</span>
       </div>
     </section>

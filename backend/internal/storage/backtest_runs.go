@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/dmytrosobko/crypto-strategy-assistant/backend/internal/backtest"
+	"github.com/dmytrosobko/crypto-strategy-assistant/backend/internal/strategy"
 	"github.com/google/uuid"
 )
 
@@ -22,16 +23,17 @@ type BacktestRun struct {
 }
 
 type BacktestRunSummary struct {
-	ID                 string    `json:"id"`
-	CandleSetID        string    `json:"candleSetId"`
-	Asset              string    `json:"asset"`
-	Start              time.Time `json:"start"`
-	End                time.Time `json:"end"`
-	StartingCashUSD    float64   `json:"startingCashUsd"`
-	ReturnPct          float64   `json:"returnPct"`
-	MaximumDrawdownPct float64   `json:"maximumDrawdownPct"`
-	CreatedAt          time.Time `json:"createdAt"`
-	CompletedAt        time.Time `json:"completedAt"`
+	ID                 string              `json:"id"`
+	CandleSetID        string              `json:"candleSetId"`
+	Asset              string              `json:"asset"`
+	Start              time.Time           `json:"start"`
+	End                time.Time           `json:"end"`
+	StartingCashUSD    float64             `json:"startingCashUsd"`
+	ReturnPct          float64             `json:"returnPct"`
+	MaximumDrawdownPct float64             `json:"maximumDrawdownPct"`
+	StrategyID         strategy.StrategyID `json:"strategyId"`
+	CreatedAt          time.Time           `json:"createdAt"`
+	CompletedAt        time.Time           `json:"completedAt"`
 }
 
 // SaveBacktestRun atomically records one complete completed simulation. It
@@ -159,7 +161,7 @@ func (s *Store) ListBacktestRuns(ctx context.Context, limit int) ([]BacktestRunS
 	if limit < 1 || limit > 500 {
 		limit = 100
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT id, candle_set_id, asset, start_timestamp, end_timestamp, starting_cash_usd, summary_json, created_at, completed_at FROM backtest_runs WHERE status = 'COMPLETED' ORDER BY created_at DESC, id ASC LIMIT ?`, limit)
+	rows, err := s.db.QueryContext(ctx, `SELECT id, candle_set_id, asset, start_timestamp, end_timestamp, starting_cash_usd, config_json, summary_json, created_at, completed_at FROM backtest_runs WHERE status = 'COMPLETED' ORDER BY created_at DESC, id ASC LIMIT ?`, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list backtest runs: %w", err)
 	}
@@ -167,8 +169,8 @@ func (s *Store) ListBacktestRuns(ctx context.Context, limit int) ([]BacktestRunS
 	runs := make([]BacktestRunSummary, 0)
 	for rows.Next() {
 		var run BacktestRunSummary
-		var start, end, summaryJSON, created, completed string
-		if err := rows.Scan(&run.ID, &run.CandleSetID, &run.Asset, &start, &end, &run.StartingCashUSD, &summaryJSON, &created, &completed); err != nil {
+		var start, end, configJSON, summaryJSON, created, completed string
+		if err := rows.Scan(&run.ID, &run.CandleSetID, &run.Asset, &start, &end, &run.StartingCashUSD, &configJSON, &summaryJSON, &created, &completed); err != nil {
 			return nil, fmt.Errorf("scan backtest run: %w", err)
 		}
 		if run.Start, err = parseDatabaseTime(start); err != nil {
@@ -187,6 +189,11 @@ func (s *Store) ListBacktestRuns(ctx context.Context, limit int) ([]BacktestRunS
 		if err := json.Unmarshal([]byte(summaryJSON), &summary); err != nil {
 			return nil, fmt.Errorf("decode backtest summary: %w", err)
 		}
+		var strategyConfig strategy.Config
+		if err := json.Unmarshal([]byte(configJSON), &strategyConfig); err != nil {
+			return nil, fmt.Errorf("decode backtest strategy config: %w", err)
+		}
+		run.StrategyID = strategyConfig.ResolvedStrategyID()
 		run.ReturnPct, run.MaximumDrawdownPct = summary.ReturnPct, summary.MaximumDrawdownPct
 		runs = append(runs, run)
 	}

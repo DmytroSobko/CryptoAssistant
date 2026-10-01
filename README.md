@@ -10,9 +10,10 @@ place orders, or execute trades.
   15 minutes.
 - Persists the current display price and up to 250 completed UTC daily OHLC
   candles locally in SQLite.
-- Evaluates a deterministic, explainable strategy using only completed daily
-  candles: correction, recovery, Higher Low, breakout, trend filter, staged
-  entries, profit protection, high-water marks, drawdown exits, and re-entry.
+- Evaluates one selected deterministic, explainable strategy per asset using
+  only completed daily candles. `Recovery Breakout` is the original staged
+  recovery strategy; `Dip Accumulation` confirms the same first entry, then
+  averages down from that reference and protects drawdown exits at break-even.
 - Stores strategy state and idempotent BUY/SELL advisory history locally.
 - Lets you manually maintain BTC/ETH positions, average entry prices, cash,
   and allocation values.
@@ -100,15 +101,23 @@ change is reflected in strategy state.
 ### History
 
 The History page is an audit trail of persisted BUY and SELL recommendations.
-It records the asset, completed-candle timestamp, decision price, state,
-action, and deterministic explanation.
+It records the asset, strategy, completed-candle timestamp, decision price,
+state, action, and deterministic explanation.
 
 ### Strategy settings
 
-BTC and ETH settings are independent. The Settings page validates pivot
-windows, trend mode, staged-entry totals, profit triggers, and ordered
-drawdown thresholds before saving. The API and storage layer independently
-enforce the same constraints.
+BTC and ETH settings are independent. For each asset, select either
+**Recovery Breakout** or **Dip Accumulation**; both configurations are saved
+independently, while only the selected one generates future advisories.
+Changing strategy starts a fresh advisory-state cycle for that asset and does
+not change the other asset or execute a trade.
+
+Dip Accumulation uses the normal recovery/trend gate for Entry 1. Entries 2
+and 3 then occur at configured dips below the fixed first-entry reference
+(defaults: 10% and 20%). Its drawdown exits require estimated net proceeds to
+meet the remaining weighted-average entry price. This can keep an underwater
+position open for a long time; it does not guarantee a profitable campaign or
+a manual market-order fill.
 
 ### Backtests
 
@@ -119,8 +128,12 @@ strategy state, live advisory History, or live market snapshots.
 
 Choose a CSV file and give it a meaningful source label, such as `Coinbase
 daily export`. After import, select its date range, starting cash, fees,
-slippage, and a run-local copy of the strategy settings. Editing that copy
-does not save or overwrite the live BTC/ETH strategy configuration.
+slippage, and a run-local copy of the asset's currently selected strategy
+settings. Editing that copy does not save or overwrite the live BTC/ETH
+strategy configuration. For Dip Accumulation, the first-entry reference is the
+actual simulated Entry 1 fill. A later drawdown sale is shown as
+`REJECTED BREAK EVEN FLOOR` if the simulated next-open net proceeds are below
+the remaining average entry price; the position remains open.
 
 Each result displays the data fingerprint, configuration snapshot, execution
 assumptions, summary metrics, daily-close equity curve, every signal, and
@@ -167,6 +180,10 @@ cannot revise its historical result.
   (1 - slippage)`.
 - The simulator never borrows, margins, or creates a negative cash/coin
   balance. Unfillable orders are recorded as rejected.
+- Dip Accumulation compares a protected drawdown sale's known next-open fill,
+  after simulated fees, with the remaining weighted-average entry. A failed
+  comparison is recorded as `REJECTED_BREAK_EVEN_FLOOR`; it does not consume
+  the drawdown level and may be eligible again later.
 - Equity is marked at each completed daily close. Taxes are excluded.
 - The current strategy engine stores and validates `ProfitTrigger2Pct`, but
   does not implement it as a separate sell rule. The backtester reports that
@@ -191,6 +208,8 @@ recommendation.
 | `GET` | `/api/history` | Persisted actionable strategy events |
 | `GET` | `/api/config` | BTC and ETH strategy settings |
 | `PUT` | `/api/config/{asset}` | Validated settings for BTC or ETH |
+| `GET` | `/api/strategy-settings` | Full selected strategy profile for BTC and ETH |
+| `PUT` | `/api/strategy-settings/{asset}` | Save one asset's selected strategy and both configurations |
 | `POST` | `/api/backtest/candle-sets` | Import a validated historical CSV as an immutable candle set |
 | `GET` | `/api/backtest/candle-sets?asset=BTC` | List imported BTC or ETH candle sets |
 | `POST` | `/api/backtests` | Run and save a synchronous hypothetical simulation |
