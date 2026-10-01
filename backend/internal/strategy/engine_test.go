@@ -15,6 +15,7 @@ func TestEvaluateDispatchPreservesRecoveryBreakoutBehavior(t *testing.T) {
 
 	previous.StrategyID = StrategyRecoveryBreakout
 	wantResult, wantState := evaluateRecoveryBreakout(candles, position, config, previous)
+	wantResult.StrategyID = StrategyRecoveryBreakout
 	gotResult, gotState := Evaluate(candles, position, config, previous)
 	if !reflect.DeepEqual(gotResult, wantResult) || !reflect.DeepEqual(gotState, wantState) {
 		t.Fatalf("implicit legacy recovery dispatch changed behavior:\n got result=%+v state=%+v\nwant result=%+v state=%+v", gotResult, gotState, wantResult, wantState)

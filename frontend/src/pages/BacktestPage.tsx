@@ -6,7 +6,9 @@ import { BacktestTradeTable } from "../components/BacktestTradeTable";
 import type { AssetSymbol, BacktestCandleSet, BacktestResult, BacktestRunSummary, StrategyConfig } from "../types/api";
 
 const assets: AssetSymbol[] = ["BTC", "ETH"];
-const numericFields: Array<{ field: Exclude<keyof StrategyConfig, "trendMode">; label: string; step?: number }> = [
+type NumericStrategyField = Exclude<keyof StrategyConfig, "trendMode" | "strategyId" | "entry2DipFromFirstPct" | "entry3DipFromFirstPct" | "estimatedSellFeeBps" | "breakEvenExitFloorEnabled">;
+
+const numericFields: Array<{ field: NumericStrategyField; label: string; step?: number }> = [
   { field: "pullbackMinPct", label: "Pullback minimum (%)" }, { field: "pivotLeft", label: "Pivot left", step: 1 }, { field: "pivotRight", label: "Pivot right", step: 1 }, { field: "breakoutBufferPct", label: "Breakout buffer (%)" },
   { field: "entry1Pct", label: "Entry 1 (%)" }, { field: "entry2Pct", label: "Entry 2 (%)" }, { field: "entry3Pct", label: "Entry 3 (%)" },
   { field: "profitTrigger1Pct", label: "Profit trigger 1 (%)" }, { field: "profitTrigger2Pct", label: "Profit trigger 2 (%)" }, { field: "profitTakePct", label: "Profit take (%)" },
@@ -129,7 +131,7 @@ export function BacktestPage() {
     try { const run = await api.backtest(id); setResult(run.result); } catch (loadError) { setError(displayError(loadError)); } finally { setIsLoadingRun(false); }
   }
 
-  function updateNumeric(field: Exclude<keyof StrategyConfig, "trendMode">, event: ChangeEvent<HTMLInputElement>) {
+  function updateNumeric(field: NumericStrategyField, event: ChangeEvent<HTMLInputElement>) {
     const value = Number(event.target.value);
     setConfig((current) => current ? { ...current, [field]: value } : current);
   }

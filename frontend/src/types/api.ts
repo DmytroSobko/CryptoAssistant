@@ -1,4 +1,5 @@
 export type AssetSymbol = "BTC" | "ETH";
+export type StrategyID = "RECOVERY_BREAKOUT" | "DIP_ACCUMULATION";
 
 export interface AssetPosition {
   symbol: AssetSymbol;
@@ -26,6 +27,7 @@ export interface MarketSnapshot {
 
 export interface StrategyResult {
   asset: AssetSymbol;
+  strategyId?: StrategyID;
   action: string;
   actionPct: number;
   state: string;
@@ -37,6 +39,8 @@ export interface StrategyResult {
   localHigh: number;
   localLow: number;
   drawdownFromHighPct: number;
+  breakEvenFloorNetPrice?: number;
+  breakEvenFloorGrossPrice?: number;
   reason: string;
   nextCondition: string;
 }
@@ -44,6 +48,7 @@ export interface StrategyResult {
 export interface StrategyEvent {
   id: number;
   asset: AssetSymbol;
+  strategyId?: StrategyID;
   timestamp: string;
   action: string;
   price: number;
@@ -52,6 +57,7 @@ export interface StrategyEvent {
 }
 
 export interface StrategyConfig {
+  strategyId?: StrategyID;
   pullbackMinPct: number;
   pivotLeft: number;
   pivotRight: number;
@@ -69,6 +75,16 @@ export interface StrategyConfig {
   drawdown2SellPct: number;
   drawdown3Pct: number;
   drawdown3SellPct: number;
+  entry2DipFromFirstPct?: number;
+  entry3DipFromFirstPct?: number;
+  estimatedSellFeeBps?: number;
+  breakEvenExitFloorEnabled?: boolean;
+}
+
+export interface AssetStrategySettings {
+  selectedStrategyId: StrategyID;
+  recoveryBreakout: StrategyConfig;
+  dipAccumulation: StrategyConfig;
 }
 
 export type BacktestExecutionModel = "NEXT_DAILY_OPEN";

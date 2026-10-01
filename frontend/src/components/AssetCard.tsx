@@ -31,6 +31,10 @@ function actionLabel(result: StrategyResult | null): string {
   return result.action.replace("BUY_40", "BUY 40%").replace("BUY_30_FINAL", "BUY 30%").replace("BUY_30", "BUY 30%").replaceAll("_", " ");
 }
 
+function strategyName(strategyId: StrategyResult["strategyId"]): string {
+  return strategyId === "DIP_ACCUMULATION" ? "Dip Accumulation" : "Recovery Breakout";
+}
+
 export function AssetCard({ asset, position, market, strategy, isLoading }: AssetCardProps) {
   const quantity = position?.quantity ?? 0;
   const entry = position?.averageEntryPrice ?? 0;
@@ -57,10 +61,11 @@ export function AssetCard({ asset, position, market, strategy, isLoading }: Asse
       </dl>
       <p className="market-timestamp">{market ? `Display price updated: ${timestamp(market.updatedAt)}` : "No display price has been loaded."}</p>
       <section className="signal">
-        <span className="eyebrow">Current action</span>
+        <div className="signal__heading"><span className="eyebrow">Current action</span>{strategy && <span className="strategy-label">{strategyName(strategy.strategyId)}</span>}</div>
         <strong className={actionClass}>{action}</strong>
         <p>{strategy?.reason ?? (isLoading ? "Loading market data and the deterministic strategy." : "Completed daily market data is not available yet.")}</p>
         {strategy && strategy.price > 0 && <p><span className="muted">Decision basis:</span> {currency(strategy.price)} completed daily close.</p>}
+        {strategy && strategy.breakEvenFloorGrossPrice && strategy.breakEvenFloorGrossPrice > 0 && <p className="signal__floor"><span className="muted">Break-even exit floor:</span> weighted average {currency(entry)} · do not sell below {currency(strategy.breakEvenFloorGrossPrice)} gross per {asset}.</p>}
         <p><span className="muted">Next trigger:</span> {strategy?.nextCondition ?? "Load completed daily candles."}</p>
       </section>
     </article>

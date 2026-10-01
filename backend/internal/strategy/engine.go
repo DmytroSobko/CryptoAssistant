@@ -112,18 +112,19 @@ type PersistedState struct {
 }
 
 type Result struct {
-	Asset               string  `json:"asset"`
-	Action              Action  `json:"action"`
-	ActionPct           float64 `json:"actionPct"`
-	State               State   `json:"state"`
-	Price               float64 `json:"price"`
-	Trend               string  `json:"trend"`
-	PositionPct         float64 `json:"positionPct"`
-	ProfitLossPct       float64 `json:"profitLossPct"`
-	PullbackPct         float64 `json:"pullbackPct"`
-	LocalHigh           float64 `json:"localHigh"`
-	LocalLow            float64 `json:"localLow"`
-	DrawdownFromHighPct float64 `json:"drawdownFromHighPct"`
+	Asset               string     `json:"asset"`
+	StrategyID          StrategyID `json:"strategyId,omitempty"`
+	Action              Action     `json:"action"`
+	ActionPct           float64    `json:"actionPct"`
+	State               State      `json:"state"`
+	Price               float64    `json:"price"`
+	Trend               string     `json:"trend"`
+	PositionPct         float64    `json:"positionPct"`
+	ProfitLossPct       float64    `json:"profitLossPct"`
+	PullbackPct         float64    `json:"pullbackPct"`
+	LocalHigh           float64    `json:"localHigh"`
+	LocalLow            float64    `json:"localLow"`
+	DrawdownFromHighPct float64    `json:"drawdownFromHighPct"`
 	// BreakEvenFloorNetPrice is the minimum net sale proceeds per coin for a
 	// protected Dip Accumulation drawdown exit. It equals the current weighted
 	// average entry price and is zero for the legacy strategy.
@@ -142,15 +143,20 @@ type Engine interface {
 // never mutates a portfolio: returned actions are recommendations, while the
 // caller is responsible for persisting both the portfolio and next state.
 func Evaluate(candles []market.Candle, position portfolio.Asset, config Config, previous PersistedState) (Result, PersistedState) {
-	previous.StrategyID = config.ResolvedStrategyID()
-	switch config.ResolvedStrategyID() {
+	strategyID := config.ResolvedStrategyID()
+	previous.StrategyID = strategyID
+	var result Result
+	var next PersistedState
+	switch strategyID {
 	case StrategyRecoveryBreakout:
-		return evaluateRecoveryBreakout(candles, position, config, previous)
+		result, next = evaluateRecoveryBreakout(candles, position, config, previous)
 	case StrategyDipAccumulation:
-		return evaluateDipAccumulation(candles, position, config, previous)
+		result, next = evaluateDipAccumulation(candles, position, config, previous)
 	default:
-		return unsupportedStrategyResult(candles, position, config, previous)
+		result, next = unsupportedStrategyResult(candles, position, config, previous)
 	}
+	result.StrategyID = strategyID
+	return result, next
 }
 
 // evaluateRecoveryBreakout is the original MVP evaluator. Keeping it as a

@@ -21,6 +21,10 @@ function formatAction(action: string): string {
   }
 }
 
+function strategyName(strategyId: StrategyEvent["strategyId"]): string {
+  return strategyId === "DIP_ACCUMULATION" ? "Dip Accumulation" : "Recovery Breakout";
+}
+
 export function HistoryPage() {
   const [events, setEvents] = useState<StrategyEvent[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -61,12 +65,13 @@ export function HistoryPage() {
       {!error && events.length > 0 && (
         <div className="history-table-wrap">
           <table className="history-table">
-            <thead><tr><th>Date</th><th>Asset</th><th>Price</th><th>State</th><th>Action</th><th>Reason</th></tr></thead>
+            <thead><tr><th>Date</th><th>Asset</th><th>Strategy</th><th>Price</th><th>State</th><th>Action</th><th>Reason</th></tr></thead>
             <tbody>
               {events.map((event) => (
                 <tr key={event.id}>
                   <td>{formatDate(event.timestamp)}</td>
                   <td>{event.asset}</td>
+                  <td>{strategyName(event.strategyId)}</td>
                   <td>{formatPrice(event.price)}</td>
                   <td>{event.state.replaceAll("_", " ")}</td>
                   <td className="history-action">{formatAction(event.action)}</td>
