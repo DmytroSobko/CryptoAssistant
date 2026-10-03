@@ -107,6 +107,19 @@ func (s *Server) handleGetBacktest(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, run)
 }
 
+func (s *Server) handleDeleteBacktest(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimSpace(r.PathValue("id"))
+	if id == "" {
+		writeError(w, http.StatusNotFound, "backtest run was not found")
+		return
+	}
+	if err := s.backtestService.DeleteRun(r.Context(), id); err != nil {
+		writeBacktestError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func writeDecodeError(w http.ResponseWriter, err error) {
 	var tooLarge *http.MaxBytesError
 	if errors.As(err, &tooLarge) {

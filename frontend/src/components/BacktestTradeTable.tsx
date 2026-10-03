@@ -1,21 +1,24 @@
+import { useState } from "react";
 import type { BacktestSignal, BacktestTrade } from "../types/api";
 
 const usd = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 });
 
 export function BacktestTradeTable({ signals, trades }: { signals: BacktestSignal[]; trades: BacktestTrade[] }) {
+  const [signalsOpen, setSignalsOpen] = useState(false);
+  const [tradesOpen, setTradesOpen] = useState(false);
   return (
     <div className="backtest-tables">
       <section className="backtest-results-section">
-        <div className="backtest-section-heading"><div><p className="eyebrow">Decision audit</p><h2>Signals</h2></div></div>
-        <div className="history-table-wrap"><table className="history-table backtest-table"><thead><tr><th>Date</th><th>Close</th><th>Action</th><th>State</th><th>Execution</th><th>Net floor</th><th>Reason</th></tr></thead><tbody>
+        <div className="backtest-section-heading"><div><p className="eyebrow">Decision audit</p><h2>Signals ({signals.length.toLocaleString()})</h2></div><button aria-expanded={signalsOpen} className="secondary-button" onClick={() => setSignalsOpen((open) => !open)} type="button">{signalsOpen ? "Hide" : "Show"}</button></div>
+        {signalsOpen && <div className="history-table-wrap"><table className="history-table backtest-table"><thead><tr><th>Date</th><th>Close</th><th>Action</th><th>State</th><th>Execution</th><th>Net floor</th><th>Reason</th></tr></thead><tbody>
           {signals.map((signal) => <tr key={signal.sequence}><td>{signal.timestamp.slice(0, 10)}</td><td>{usd.format(signal.decisionClose)}</td><td className="history-action">{formatAction(signal.action, signal.actionPct)}</td><td>{signal.strategyState.replaceAll("_", " ")}</td><td><Status value={signal.orderStatus} /></td><td>{floor(signal.breakEvenFloorNetPrice)}</td><td>{signal.reason}<small>{signal.nextCondition}</small></td></tr>)}
-        </tbody></table></div>
+        </tbody></table></div>}
       </section>
       <section className="backtest-results-section">
-        <div className="backtest-section-heading"><div><p className="eyebrow">Assume-filled model</p><h2>Trades</h2></div></div>
-        {trades.length === 0 ? <p className="muted">No simulated fills were produced for this period.</p> : <div className="history-table-wrap"><table className="history-table backtest-table"><thead><tr><th>Signal</th><th>Fill</th><th>Side</th><th>Quantity</th><th>Fill price</th><th>Fee</th><th>Net floor</th><th>Status</th></tr></thead><tbody>
+        <div className="backtest-section-heading"><div><p className="eyebrow">Assume-filled model</p><h2>Trades ({trades.length.toLocaleString()})</h2></div><button aria-expanded={tradesOpen} className="secondary-button" onClick={() => setTradesOpen((open) => !open)} type="button">{tradesOpen ? "Hide" : "Show"}</button></div>
+        {tradesOpen && (trades.length === 0 ? <p className="muted">No simulated fills were produced for this period.</p> : <div className="history-table-wrap"><table className="history-table backtest-table"><thead><tr><th>Signal</th><th>Fill</th><th>Side</th><th>Quantity</th><th>Fill price</th><th>Fee</th><th>Net floor</th><th>Status</th></tr></thead><tbody>
           {trades.map((trade) => <tr key={trade.sequence}><td>{trade.signalTimestamp.slice(0, 10)}</td><td>{trade.executionTimestamp ? trade.executionTimestamp.slice(0, 10) : "—"}</td><td>{trade.side}</td><td>{trade.quantity.toFixed(8)}</td><td>{trade.fillPrice ? usd.format(trade.fillPrice) : "—"}</td><td>{usd.format(trade.feeUsd)}</td><td>{floor(trade.breakEvenFloorNetPrice)}</td><td><Status value={trade.status} /><small>{trade.reason}</small></td></tr>)}
-        </tbody></table></div>}
+        </tbody></table></div>)}
       </section>
     </div>
   );

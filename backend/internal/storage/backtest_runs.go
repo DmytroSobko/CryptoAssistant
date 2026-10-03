@@ -157,6 +157,21 @@ func (s *Store) GetBacktestRun(ctx context.Context, id string) (BacktestRun, err
 	return run, nil
 }
 
+// DeleteBacktestRun permanently removes one saved simulation and its dependent
+// signals, trades, and equity points. It deliberately leaves the immutable
+// imported candle set available for other saved runs and future simulations.
+func (s *Store) DeleteBacktestRun(ctx context.Context, id string) (bool, error) {
+	result, err := s.db.ExecContext(ctx, `DELETE FROM backtest_runs WHERE id = ?`, id)
+	if err != nil {
+		return false, fmt.Errorf("delete backtest run: %w", err)
+	}
+	deleted, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("count deleted backtest runs: %w", err)
+	}
+	return deleted == 1, nil
+}
+
 func (s *Store) ListBacktestRuns(ctx context.Context, limit int) ([]BacktestRunSummary, error) {
 	if limit < 1 || limit > 500 {
 		limit = 100

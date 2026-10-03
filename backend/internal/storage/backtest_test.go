@@ -2,7 +2,9 @@ package storage
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -185,6 +187,20 @@ func TestBacktestRunRoundTripAndAssetMismatchAreIsolated(t *testing.T) {
 	list, err = store.ListBacktestRuns(context.Background(), 10)
 	if err != nil || len(list) != 1 {
 		t.Fatalf("failed run corrupted saved runs: runs=%+v err=%v", list, err)
+	}
+	deleted, err := store.DeleteBacktestRun(context.Background(), saved.ID)
+	if err != nil || !deleted {
+		t.Fatalf("delete saved run: deleted=%v err=%v", deleted, err)
+	}
+	if _, err := store.GetBacktestRun(context.Background(), saved.ID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("deleted run remains readable: %v", err)
+	}
+	list, err = store.ListBacktestRuns(context.Background(), 10)
+	if err != nil || len(list) != 0 {
+		t.Fatalf("deleted run remains listed: runs=%+v err=%v", list, err)
+	}
+	if _, _, err := store.GetBacktestCandleSet(context.Background(), set.ID); err != nil {
+		t.Fatalf("deleting a run removed its candle set: %v", err)
 	}
 }
 

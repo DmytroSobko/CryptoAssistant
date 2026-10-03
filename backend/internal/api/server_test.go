@@ -95,6 +95,16 @@ func TestBacktestEndpointsCreateAuditableRunWithoutChangingLiveResponses(t *test
 	if missing.Code != http.StatusNotFound {
 		t.Fatalf("missing run status=%d body=%s", missing.Code, missing.Body.String())
 	}
+	deleted := serve(handler, http.MethodDelete, "/api/backtests/"+run.ID, nil)
+	if deleted.Code != http.StatusNoContent {
+		t.Fatalf("delete status=%d body=%s", deleted.Code, deleted.Body.String())
+	}
+	if response := serve(handler, http.MethodGet, "/api/backtests/"+run.ID, nil); response.Code != http.StatusNotFound {
+		t.Fatalf("deleted run status=%d body=%s", response.Code, response.Body.String())
+	}
+	if response := serve(handler, http.MethodDelete, "/api/backtests/"+run.ID, nil); response.Code != http.StatusNotFound {
+		t.Fatalf("repeat delete status=%d body=%s", response.Code, response.Body.String())
+	}
 
 	portfolioAfter := serve(handler, http.MethodGet, "/api/portfolio", nil)
 	historyAfter := serve(handler, http.MethodGet, "/api/history", nil)

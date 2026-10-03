@@ -55,6 +55,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /api/backtests", s.handleCreateBacktest)
 	mux.HandleFunc("GET /api/backtests", s.handleListBacktests)
 	mux.HandleFunc("GET /api/backtests/{id}", s.handleGetBacktest)
+	mux.HandleFunc("DELETE /api/backtests/{id}", s.handleDeleteBacktest)
 	return withCORS(withLogging(mux))
 }
 

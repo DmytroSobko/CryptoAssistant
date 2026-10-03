@@ -113,6 +113,21 @@ func (s *Service) GetRun(ctx context.Context, id string) (storage.BacktestRun, e
 	return run, err
 }
 
+func (s *Service) DeleteRun(ctx context.Context, id string) error {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return fmt.Errorf("backtest run: %w", ErrNotFound)
+	}
+	deleted, err := s.store.DeleteBacktestRun(ctx, id)
+	if err != nil {
+		return err
+	}
+	if !deleted {
+		return fmt.Errorf("backtest run %q: %w", id, ErrNotFound)
+	}
+	return nil
+}
+
 func (s *Service) ListRuns(ctx context.Context, limit int) ([]storage.BacktestRunSummary, error) {
 	return s.store.ListBacktestRuns(ctx, limit)
 }

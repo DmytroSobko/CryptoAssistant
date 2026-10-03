@@ -82,6 +82,8 @@ export function BacktestPage() {
   const [isImporting, setIsImporting] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
   const [isLoadingRun, setIsLoadingRun] = useState(false);
+  const [deletingRunID, setDeletingRunID] = useState<string | null>(null);
+  const [loadedRunID, setLoadedRunID] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const selectedSet = useMemo(() => candleSets.find((set) => set.id === selectedSetID), [candleSets, selectedSetID]);
   const isDipAccumulation = config ? strategyID(config) === "DIP_ACCUMULATION" : false;
@@ -101,7 +103,7 @@ export function BacktestPage() {
 
   useEffect(() => {
     let active = true;
-    setSelectedSetID(""); setStart(""); setEnd(""); setResult(null); setError(null); setNotice(null);
+    setSelectedSetID(""); setStart(""); setEnd(""); setResult(null); setLoadedRunID(null); setError(null); setNotice(null);
     if (profiles[asset]) setConfig({ ...configForStrategy(profiles[asset]!, backtestStrategies[asset]) });
     void api.backtestCandleSets(asset).then((sets) => {
       if (!active) return;
@@ -121,6 +123,7 @@ export function BacktestPage() {
     setBacktestStrategies((current) => ({ ...current, [asset]: candidate }));
     setConfig({ ...configForStrategy(profile, candidate) });
     setResult(null);
+    setLoadedRunID(null);
     setError(null);
     setNotice(null);
   }
@@ -146,6 +149,7 @@ export function BacktestPage() {
     try {
       const run = await api.createBacktest({ candleSetId: selectedSet.id, asset, start: `${start}T00:00:00Z`, end: `${end}T00:00:00Z`, startingCashUsd: startingCash, strategyConfig: config, feeBps, slippageBps, executionModel: "NEXT_DAILY_OPEN" });
       setResult(run.result);
+      setLoadedRunID(run.id);
       setRuns((current) => [{ id: run.id, candleSetId: run.candleSetId, asset: run.result.request.asset, start: run.result.request.start, end: run.result.request.end, startingCashUsd: run.result.summary.startingCashUsd, returnPct: run.result.summary.returnPct, maximumDrawdownPct: run.result.summary.maximumDrawdownPct, strategyId: strategyID(run.result.request.strategyConfig), createdAt: run.createdAt, completedAt: run.completedAt }, ...current]);
       setNotice("Backtest completed and saved locally. Live advisory data was not changed.");
     } catch (runError) { setError(displayError(runError)); } finally { setIsRunning(false); }
@@ -153,7 +157,18 @@ export function BacktestPage() {
 
   async function loadRun(id: string) {
     setError(null); setNotice(null); setIsLoadingRun(true);
-    try { const run = await api.backtest(id); setResult(run.result); } catch (loadError) { setError(displayError(loadError)); } finally { setIsLoadingRun(false); }
+    try { const run = await api.backtest(id); setResult(run.result); setLoadedRunID(id); } catch (loadError) { setError(displayError(loadError)); } finally { setIsLoadingRun(false); }
+  }
+
+  async function deleteRun(id: string) {
+    if (!window.confirm("Permanently delete this saved backtest run and its audit data? The imported candle set will be kept.")) return;
+    setError(null); setNotice(null); setDeletingRunID(id);
+    try {
+      await api.deleteBacktest(id);
+      setRuns((current) => current.filter((run) => run.id !== id));
+      if (loadedRunID === id) { setResult(null); setLoadedRunID(null); }
+      setNotice("Saved backtest run deleted. Its source candle set was kept.");
+    } catch (deleteError) { setError(displayError(deleteError)); } finally { setDeletingRunID(null); }
   }
 
   function updateNumeric(field: EditableNumericField, event: ChangeEvent<HTMLInputElement>) {
@@ -183,6 +198,6 @@ export function BacktestPage() {
     </section></form>
 
     {result && <><BacktestSummary asset={result.request.asset} result={result} /><BacktestEquityChart points={result.equityCurve} /><BacktestTradeTable signals={result.signals} trades={result.trades} /></>}
-    <section className="backtest-results-section"><div className="backtest-section-heading"><div><p className="eyebrow">Read-only archive</p><h2>Saved runs</h2></div></div>{runs.length === 0 ? <p className="muted">Completed backtests will remain available here.</p> : <div className="saved-runs">{runs.map((run) => <div className="saved-run" key={run.id}><div><strong>{run.asset} · {strategyName(run.strategyId)} · {run.start.slice(0, 10)} to {run.end.slice(0, 10)}</strong><span>Created {new Date(run.createdAt).toLocaleDateString()} · ${run.startingCashUsd.toLocaleString()} starting capital</span></div><div><span className={run.returnPct >= 0 ? "metric--positive" : "metric--negative"}>{run.returnPct >= 0 ? "+" : ""}{run.returnPct.toFixed(2)}%</span><small>max DD {run.maximumDrawdownPct.toFixed(2)}%</small></div><button className="secondary-button" disabled={isLoadingRun} onClick={() => void loadRun(run.id)} type="button">{isLoadingRun ? "Loading…" : "View"}</button></div>)}</div>}</section>
+    <section className="backtest-results-section"><div className="backtest-section-heading"><div><p className="eyebrow">Read-only archive</p><h2>Saved runs</h2></div></div>{runs.length === 0 ? <p className="muted">Completed backtests will remain available here.</p> : <div className="saved-runs">{runs.map((run) => <div className="saved-run" key={run.id}><div><strong>{run.asset} · {strategyName(run.strategyId)} · {run.start.slice(0, 10)} to {run.end.slice(0, 10)}</strong><span>Created {new Date(run.createdAt).toLocaleDateString()} · ${run.startingCashUsd.toLocaleString()} starting capital</span></div><div><span className={run.returnPct >= 0 ? "metric--positive" : "metric--negative"}>{run.returnPct >= 0 ? "+" : ""}{run.returnPct.toFixed(2)}%</span><small>max DD {run.maximumDrawdownPct.toFixed(2)}%</small></div><div className="saved-run-actions"><button className="secondary-button" disabled={isLoadingRun || deletingRunID !== null} onClick={() => void loadRun(run.id)} type="button">{isLoadingRun ? "Loading…" : "View"}</button><button className="secondary-button danger-button" disabled={deletingRunID !== null} onClick={() => void deleteRun(run.id)} type="button">{deletingRunID === run.id ? "Deleting…" : "Delete"}</button></div></div>)}</div>}</section>
   </section>;
 }
