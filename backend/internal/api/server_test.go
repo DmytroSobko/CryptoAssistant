@@ -131,6 +131,13 @@ func TestBacktestEndpointsRejectBadInputAndOversizedCSV(t *testing.T) {
 	}
 }
 
+func TestCORSAllowsBacktestRunDeletion(t *testing.T) {
+	response := serve(newTestHandler(t), http.MethodOptions, "/api/backtests/example", nil)
+	if response.Code != http.StatusNoContent || !strings.Contains(response.Header().Get("Access-Control-Allow-Methods"), http.MethodDelete) {
+		t.Fatalf("delete CORS preflight response=%d methods=%q", response.Code, response.Header().Get("Access-Control-Allow-Methods"))
+	}
+}
+
 func TestStrategySettingsEndpointsSelectAnAssetStrategyWithoutChangingTheOtherAsset(t *testing.T) {
 	handler := newTestHandler(t)
 	initial := serve(handler, http.MethodGet, "/api/strategy-settings", nil)
