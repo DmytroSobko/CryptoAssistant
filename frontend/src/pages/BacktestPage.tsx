@@ -83,6 +83,7 @@ export function BacktestPage() {
   const [isRunning, setIsRunning] = useState(false);
   const [isLoadingRun, setIsLoadingRun] = useState(false);
   const [deletingRunID, setDeletingRunID] = useState<string | null>(null);
+  const [pendingDeleteRunID, setPendingDeleteRunID] = useState<string | null>(null);
   const [loadedRunID, setLoadedRunID] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const selectedSet = useMemo(() => candleSets.find((set) => set.id === selectedSetID), [candleSets, selectedSetID]);
@@ -161,12 +162,12 @@ export function BacktestPage() {
   }
 
   async function deleteRun(id: string) {
-    if (!window.confirm("Permanently delete this saved backtest run and its audit data? The imported candle set will be kept.")) return;
     setError(null); setNotice(null); setDeletingRunID(id);
     try {
       await api.deleteBacktest(id);
       setRuns((current) => current.filter((run) => run.id !== id));
       if (loadedRunID === id) { setResult(null); setLoadedRunID(null); }
+      setPendingDeleteRunID(null);
       setNotice("Saved backtest run deleted. Its source candle set was kept.");
     } catch (deleteError) { setError(displayError(deleteError)); } finally { setDeletingRunID(null); }
   }
@@ -198,6 +199,20 @@ export function BacktestPage() {
     </section></form>
 
     {result && <><BacktestSummary asset={result.request.asset} result={result} /><BacktestEquityChart points={result.equityCurve} /><BacktestTradeTable signals={result.signals} trades={result.trades} /></>}
-    <section className="backtest-results-section"><div className="backtest-section-heading"><div><p className="eyebrow">Read-only archive</p><h2>Saved runs</h2></div></div>{runs.length === 0 ? <p className="muted">Completed backtests will remain available here.</p> : <div className="saved-runs">{runs.map((run) => <div className="saved-run" key={run.id}><div><strong>{run.asset} · {strategyName(run.strategyId)} · {run.start.slice(0, 10)} to {run.end.slice(0, 10)}</strong><span>Created {new Date(run.createdAt).toLocaleDateString()} · ${run.startingCashUsd.toLocaleString()} starting capital</span></div><div><span className={run.returnPct >= 0 ? "metric--positive" : "metric--negative"}>{run.returnPct >= 0 ? "+" : ""}{run.returnPct.toFixed(2)}%</span><small>max DD {run.maximumDrawdownPct.toFixed(2)}%</small></div><div className="saved-run-actions"><button className="secondary-button" disabled={isLoadingRun || deletingRunID !== null} onClick={() => void loadRun(run.id)} type="button">{isLoadingRun ? "Loading…" : "View"}</button><button className="secondary-button danger-button" disabled={deletingRunID !== null} onClick={() => void deleteRun(run.id)} type="button">{deletingRunID === run.id ? "Deleting…" : "Delete"}</button></div></div>)}</div>}</section>
+    <section className="backtest-results-section">
+      <div className="backtest-section-heading"><div><p className="eyebrow">Read-only archive</p><h2>Saved runs</h2></div></div>
+      {runs.length === 0 ? <p className="muted">Completed backtests will remain available here.</p> : <div className="saved-runs">{runs.map((run) => <div className="saved-run" key={run.id}>
+        <div><strong>{run.asset} · {strategyName(run.strategyId)} · {run.start.slice(0, 10)} to {run.end.slice(0, 10)}</strong><span>Created {new Date(run.createdAt).toLocaleDateString()} · ${run.startingCashUsd.toLocaleString()} starting capital</span></div>
+        <div><span className={run.returnPct >= 0 ? "metric--positive" : "metric--negative"}>{run.returnPct >= 0 ? "+" : ""}{run.returnPct.toFixed(2)}%</span><small>max DD {run.maximumDrawdownPct.toFixed(2)}%</small></div>
+        <div className="saved-run-actions">
+          <button className="secondary-button" disabled={isLoadingRun || deletingRunID !== null} onClick={() => void loadRun(run.id)} type="button">{isLoadingRun ? "Loading…" : "View"}</button>
+          {pendingDeleteRunID === run.id ? <>
+            <button className="secondary-button danger-button" disabled={deletingRunID !== null} onClick={() => void deleteRun(run.id)} type="button">{deletingRunID === run.id ? "Deleting…" : "Confirm delete"}</button>
+            <button className="secondary-button" disabled={deletingRunID !== null} onClick={() => setPendingDeleteRunID(null)} type="button">Cancel</button>
+          </> : <button className="secondary-button danger-button" disabled={deletingRunID !== null} onClick={() => setPendingDeleteRunID(run.id)} type="button">Delete</button>}
+        </div>
+      </div>)}</div>}
+      <p className="backtest-help">Delete removes the saved simulation and its audit data. Imported candle sets are kept.</p>
+    </section>
   </section>;
 }
