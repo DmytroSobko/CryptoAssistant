@@ -6,18 +6,19 @@ const usd = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD",
 export function BacktestTradeTable({ signals, trades }: { signals: BacktestSignal[]; trades: BacktestTrade[] }) {
   const [signalsOpen, setSignalsOpen] = useState(false);
   const [tradesOpen, setTradesOpen] = useState(false);
+  const tradesBySignal = new Map(trades.map((trade) => [trade.signalSequence, trade]));
   return (
     <div className="backtest-tables">
       <section className="backtest-results-section">
         <div className="backtest-section-heading"><div><p className="eyebrow">Decision audit</p><h2>Signals ({signals.length.toLocaleString()})</h2></div><button aria-expanded={signalsOpen} className="secondary-button" onClick={() => setSignalsOpen((open) => !open)} type="button">{signalsOpen ? "Hide" : "Show"}</button></div>
-        {signalsOpen && <div className="history-table-wrap"><table className="history-table backtest-table"><thead><tr><th>Date</th><th>Close</th><th>Action</th><th>State</th><th>Execution</th><th>Net floor</th><th>Reason</th></tr></thead><tbody>
-          {signals.map((signal) => <tr key={signal.sequence}><td>{signal.timestamp.slice(0, 10)}</td><td>{usd.format(signal.decisionClose)}</td><td className="history-action">{formatAction(signal.action, signal.actionPct)}</td><td>{signal.strategyState.replaceAll("_", " ")}</td><td><Status value={signal.orderStatus} /></td><td>{floor(signal.breakEvenFloorNetPrice)}</td><td>{signal.reason}<small>{signal.nextCondition}</small></td></tr>)}
+        {signalsOpen && <div className="history-table-wrap"><table className="history-table backtest-table"><thead><tr><th>Date</th><th>Close</th><th>Action</th><th>Filled amount (USD)</th><th>State</th><th>Execution</th><th>Net floor</th><th>Reason</th></tr></thead><tbody>
+          {signals.map((signal) => <tr key={signal.sequence}><td>{signal.timestamp.slice(0, 10)}</td><td>{usd.format(signal.decisionClose)}</td><td className="history-action">{formatAction(signal.action, signal.actionPct)}</td><td>{filledAmount(tradesBySignal.get(signal.sequence))}</td><td>{signal.strategyState.replaceAll("_", " ")}</td><td><Status value={signal.orderStatus} /></td><td>{floor(signal.breakEvenFloorNetPrice)}</td><td>{signal.reason}<small>{signal.nextCondition}</small></td></tr>)}
         </tbody></table></div>}
       </section>
       <section className="backtest-results-section">
         <div className="backtest-section-heading"><div><p className="eyebrow">Assume-filled model</p><h2>Trades ({trades.length.toLocaleString()})</h2></div><button aria-expanded={tradesOpen} className="secondary-button" onClick={() => setTradesOpen((open) => !open)} type="button">{tradesOpen ? "Hide" : "Show"}</button></div>
-        {tradesOpen && (trades.length === 0 ? <p className="muted">No simulated fills were produced for this period.</p> : <div className="history-table-wrap"><table className="history-table backtest-table"><thead><tr><th>Signal</th><th>Fill</th><th>Side</th><th>Quantity</th><th>Fill price</th><th>Fee</th><th>Net floor</th><th>Status</th></tr></thead><tbody>
-          {trades.map((trade) => <tr key={trade.sequence}><td>{trade.signalTimestamp.slice(0, 10)}</td><td>{trade.executionTimestamp ? trade.executionTimestamp.slice(0, 10) : "—"}</td><td>{trade.side}</td><td>{trade.quantity.toFixed(8)}</td><td>{trade.fillPrice ? usd.format(trade.fillPrice) : "—"}</td><td>{usd.format(trade.feeUsd)}</td><td>{floor(trade.breakEvenFloorNetPrice)}</td><td><Status value={trade.status} /><small>{trade.reason}</small></td></tr>)}
+        {tradesOpen && (trades.length === 0 ? <p className="muted">No simulated fills were produced for this period.</p> : <div className="history-table-wrap"><table className="history-table backtest-table"><thead><tr><th>Signal</th><th>Fill</th><th>Action</th><th>Quantity</th><th>Filled amount (USD)</th><th>Fill price</th><th>Fee</th><th>Net floor</th><th>Status</th></tr></thead><tbody>
+          {trades.map((trade) => <tr key={trade.sequence}><td>{trade.signalTimestamp.slice(0, 10)}</td><td>{trade.executionTimestamp ? trade.executionTimestamp.slice(0, 10) : "—"}</td><td>{formatAction(trade.action, trade.requestedPct)}</td><td>{trade.quantity.toFixed(8)}</td><td>{filledAmount(trade)}</td><td>{trade.fillPrice ? usd.format(trade.fillPrice) : "—"}</td><td>{usd.format(trade.feeUsd)}</td><td>{floor(trade.breakEvenFloorNetPrice)}</td><td><Status value={trade.status} /><small>{trade.reason}</small></td></tr>)}
         </tbody></table></div>)}
       </section>
     </div>
@@ -26,4 +27,9 @@ export function BacktestTradeTable({ signals, trades }: { signals: BacktestSigna
 
 function Status({ value }: { value: string }) { return <span className={value === "EXECUTED" ? "backtest-status backtest-status--success" : value === "REJECTED_BREAK_EVEN_FLOOR" ? "backtest-status backtest-status--blocked" : value === "NO_ORDER" ? "backtest-status" : "backtest-status backtest-status--warning"}>{value.replaceAll("_", " ")}</span>; }
 function floor(value: number | undefined) { return value && value > 0 ? usd.format(value) : "—"; }
-function formatAction(action: string, percentage: number) { return percentage > 0 ? `${action.replaceAll("_", " ")} ${percentage}%` : action.replaceAll("_", " "); }
+function filledAmount(trade: BacktestTrade | undefined) { return trade?.status === "EXECUTED" ? usd.format(trade.grossNotionalUsd) : "—"; }
+function formatAction(action: string, percentage: number) {
+  if (action.startsWith("BUY")) return `BUY ${percentage}%`;
+  if (action.startsWith("SELL")) return `SELL ${percentage}%`;
+  return action.replaceAll("_", " ");
+}

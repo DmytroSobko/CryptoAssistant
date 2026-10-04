@@ -59,11 +59,8 @@ func validateSharedConfig(config Config) error {
 		return fmt.Errorf("entry percentages cannot total more than 100")
 	}
 
-	if !validPositivePercentage(config.ProfitTrigger1Pct) || !validPositivePercentage(config.ProfitTrigger2Pct) {
-		return fmt.Errorf("profit triggers must be greater than 0 and at most 100")
-	}
-	if config.ProfitTrigger2Pct < config.ProfitTrigger1Pct {
-		return fmt.Errorf("profit trigger 2 must be at or above profit trigger 1")
+	if !validPositivePercentage(config.ProfitTrigger1Pct) {
+		return fmt.Errorf("profit trigger must be greater than 0 and at most 100")
 	}
 	if !validPositivePercentage(config.ProfitTakePct) {
 		return fmt.Errorf("profit take percentage must be greater than 0 and at most 100")

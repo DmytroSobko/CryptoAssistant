@@ -40,8 +40,7 @@ const allocationFields: FieldDefinition[] = [
   { field: "entry3Pct", label: "Entry 3 (%)", min: 0 },
 ];
 const profitFields: FieldDefinition[] = [
-  { field: "profitTrigger1Pct", label: "Profit trigger 1 (%)", min: 0 },
-  { field: "profitTrigger2Pct", label: "Profit trigger 2 (%)", min: 0 },
+  { field: "profitTrigger1Pct", label: "Profit trigger (%)", min: 0 },
   { field: "profitTakePct", label: "Profit take (%)", min: 0 },
 ];
 const drawdownFields: FieldDefinition[] = [
@@ -103,17 +102,16 @@ function configFromForm(form: ConfigForm, strategyId: StrategyID): StrategyConfi
     breakoutBufferPct: numberValue(form.breakoutBufferPct, "Breakout buffer"),
     trendMode: form.trendMode,
     entry1Pct: numberValue(form.entry1Pct, "Entry 1"), entry2Pct: numberValue(form.entry2Pct, "Entry 2"), entry3Pct: numberValue(form.entry3Pct, "Entry 3"),
-    profitTrigger1Pct: numberValue(form.profitTrigger1Pct, "Profit trigger 1"), profitTrigger2Pct: numberValue(form.profitTrigger2Pct, "Profit trigger 2"), profitTakePct: numberValue(form.profitTakePct, "Profit take"),
+    profitTrigger1Pct: numberValue(form.profitTrigger1Pct, "Profit trigger"), profitTrigger2Pct: Number(form.profitTrigger2Pct) || 0, profitTakePct: numberValue(form.profitTakePct, "Profit take"),
     drawdown1Pct: numberValue(form.drawdown1Pct, "Drawdown 1"), drawdown1SellPct: numberValue(form.drawdown1SellPct, "Drawdown 1 sell"),
     drawdown2Pct: numberValue(form.drawdown2Pct, "Drawdown 2"), drawdown2SellPct: numberValue(form.drawdown2SellPct, "Drawdown 2 sell"),
     drawdown3Pct: numberValue(form.drawdown3Pct, "Drawdown 3"), drawdown3SellPct: numberValue(form.drawdown3SellPct, "Drawdown 3 sell"),
   };
-  const positivePercentages = [config.pullbackMinPct, config.entry1Pct, config.entry2Pct, config.entry3Pct, config.profitTrigger1Pct, config.profitTrigger2Pct, config.profitTakePct, config.drawdown1SellPct, config.drawdown2SellPct, config.drawdown3SellPct];
+  const positivePercentages = [config.pullbackMinPct, config.entry1Pct, config.entry2Pct, config.entry3Pct, config.profitTrigger1Pct, config.profitTakePct, config.drawdown1SellPct, config.drawdown2SellPct, config.drawdown3SellPct];
   if (positivePercentages.some((value) => value <= 0 || value > 100)) throw new Error("Positive percentage values must be greater than 0 and at most 100.");
   if (!Number.isInteger(config.pivotLeft) || !Number.isInteger(config.pivotRight) || config.pivotLeft < 1 || config.pivotRight < 1) throw new Error("Pivot windows must both be whole numbers of at least 1.");
   if (config.breakoutBufferPct < 0 || config.breakoutBufferPct > 100) throw new Error("Breakout buffer must be between 0 and 100.");
   if (config.entry1Pct + config.entry2Pct + config.entry3Pct > 100) throw new Error("Entry percentages cannot total more than 100.");
-  if (config.profitTrigger2Pct < config.profitTrigger1Pct) throw new Error("Profit trigger 2 must be at or above profit trigger 1.");
   if (config.drawdown1Pct >= 0 || config.drawdown2Pct >= 0 || config.drawdown3Pct >= 0 || config.drawdown1Pct < -100 || config.drawdown2Pct < -100 || config.drawdown3Pct < -100) throw new Error("Drawdown thresholds must be below 0 and no less than -100.");
   if (!(config.drawdown1Pct > config.drawdown2Pct && config.drawdown2Pct > config.drawdown3Pct)) throw new Error("Drawdown thresholds must become progressively deeper.");
   if (strategyId === "DIP_ACCUMULATION") {

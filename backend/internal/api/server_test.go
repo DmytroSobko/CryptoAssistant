@@ -24,6 +24,7 @@ func TestBacktestEndpointsCreateAuditableRunWithoutChangingLiveResponses(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
+
 	t.Cleanup(func() { store.Close() })
 	if err := store.Migrate("../../migrations"); err != nil {
 		t.Fatal(err)
@@ -55,6 +56,21 @@ func TestBacktestEndpointsCreateAuditableRunWithoutChangingLiveResponses(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
+	preview := serve(handler, http.MethodPost, "/api/backtests/preview", runBody)
+	if preview.Code != http.StatusCreated {
+		t.Fatalf("preview status=%d body=%s", preview.Code, preview.Body.String())
+	}
+	var previewRun storage.BacktestRun
+	if err := json.Unmarshal(preview.Body.Bytes(), &previewRun); err != nil {
+		t.Fatal(err)
+	}
+	if previewRun.ID != "" || previewRun.Result.Summary.SignalCount != 2 {
+		t.Fatal("preview must return the result without a saved ID")
+	}
+	var savedCount int
+	if err := store.DB().QueryRow(`SELECT COUNT(*) FROM backtest_runs`).Scan(&savedCount); err != nil || savedCount != 0 {
+		t.Fatalf("preview persisted a run: count=%d err=%v", savedCount, err)
+	}
 	created := serve(handler, http.MethodPost, "/api/backtests", runBody)
 	if created.Code != http.StatusCreated || !bytes.Contains(created.Body.Bytes(), []byte(`"dataFingerprint"`)) {
 		t.Fatalf("run status=%d body=%s", created.Code, created.Body.String())
@@ -65,6 +81,11 @@ func TestBacktestEndpointsCreateAuditableRunWithoutChangingLiveResponses(t *test
 	}
 	if run.ID == "" || run.Result.Summary.SignalCount != 2 {
 		t.Fatalf("unexpected created run: %+v", run)
+	}
+	previewResult, _ := json.Marshal(previewRun.Result)
+	savedResult, _ := json.Marshal(run.Result)
+	if !bytes.Equal(previewResult, savedResult) {
+		t.Fatal("explicit save must preserve the preview result")
 	}
 	unknownBody, err := json.Marshal(createBacktestInput{CandleSetID: "missing-set", Asset: "BTC", Start: start, End: start.AddDate(0, 0, 1), StartingCashUSD: 10000, StrategyConfig: apiBacktestConfig(), FeeBps: 10, SlippageBps: 5, ExecutionModel: "NEXT_DAILY_OPEN"})
 	if err != nil {
@@ -152,6 +173,7 @@ func TestStrategySettingsEndpointsSelectAnAssetStrategyWithoutChangingTheOtherAs
 	eth := profiles["ETH"]
 	btc.SelectedStrategyID = strategy.StrategyDipAccumulation
 	btc.DipAccumulation.Entry1Pct = 35
+	btc.DipAccumulation.Entry3Pct = 35
 	btc.ATHEntryOverride = strategy.ATHEntryOverrideSettings{Enabled: true, ThresholdPct: 55}
 	body, err := json.Marshal(btc)
 	if err != nil {
@@ -245,7 +267,7 @@ func TestPortfolioAndConfigEndpoints(t *testing.T) {
 
 	configResponse := httptest.NewRecorder()
 	handler.ServeHTTP(configResponse, httptest.NewRequest(http.MethodGet, "/api/config", nil))
-	if configResponse.Code != http.StatusOK || !bytes.Contains(configResponse.Body.Bytes(), []byte(`"pullbackMinPct":10`)) {
+	if configResponse.Code != http.StatusOK || !bytes.Contains(configResponse.Body.Bytes(), []byte(`"pullbackMinPct":15`)) {
 		t.Fatalf("unexpected config response (%d): %s", configResponse.Code, configResponse.Body.String())
 	}
 
@@ -349,6 +371,14 @@ func TestStrategyEndpointEvaluatesDailyCandlesAndRecordsOneActionEvent(t *testin
 		Drawdown1Pct: -10, Drawdown1SellPct: 20, Drawdown2Pct: -15, Drawdown2SellPct: 30, Drawdown3Pct: -20, Drawdown3SellPct: 70,
 	}); err != nil {
 		t.Fatalf("save config: %v", err)
+	}
+	profile, err := store.GetAssetStrategySettings(context.Background(), "BTC")
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile.ATHEntryOverride.Enabled = false
+	if err := store.SaveAssetStrategySettings(context.Background(), "BTC", profile); err != nil {
+		t.Fatal(err)
 	}
 	start := time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)
 	prices := []float64{100, 120, 100, 80, 90, 85, 95, 96}

@@ -38,6 +38,7 @@ export const api = {
   importBacktestCandleSet: (input: BacktestImportInput) => request<BacktestCandleSet>("/api/backtest/candle-sets", { method: "POST", body: JSON.stringify(input) }),
   backtestCandleSets: (asset?: AssetSymbol) => request<BacktestCandleSet[]>(`/api/backtest/candle-sets${asset ? `?asset=${asset}` : ""}`),
   createBacktest: (input: BacktestRunInput) => request<BacktestRun>("/api/backtests", { method: "POST", body: JSON.stringify(input) }),
+  previewBacktest: (input: BacktestRunInput) => request<BacktestRun>("/api/backtests/preview", { method: "POST", body: JSON.stringify(input) }),
   backtests: () => request<BacktestRunSummary[]>("/api/backtests"),
   backtest: (id: string) => request<BacktestRun>(`/api/backtests/${encodeURIComponent(id)}`),
   deleteBacktest: (id: string) => request<void>(`/api/backtests/${encodeURIComponent(id)}`, { method: "DELETE" }),

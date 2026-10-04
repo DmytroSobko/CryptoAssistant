@@ -78,6 +78,15 @@ func (s *Service) ListCandleSets(ctx context.Context, asset string) ([]storage.B
 }
 
 func (s *Service) Run(ctx context.Context, request RunRequest) (storage.BacktestRun, error) {
+	return s.run(ctx, request, true)
+}
+
+// Preview evaluates an isolated simulation without adding it to the archive.
+func (s *Service) Preview(ctx context.Context, request RunRequest) (storage.BacktestRun, error) {
+	return s.run(ctx, request, false)
+}
+
+func (s *Service) run(ctx context.Context, request RunRequest, save bool) (storage.BacktestRun, error) {
 	if strings.TrimSpace(request.CandleSetID) == "" {
 		return storage.BacktestRun{}, invalid(fmt.Errorf("candle set ID is required"))
 	}
@@ -97,6 +106,9 @@ func (s *Service) Run(ctx context.Context, request RunRequest) (storage.Backtest
 	result, err := backtest.Run(request.Request, candles)
 	if err != nil {
 		return storage.BacktestRun{}, invalid(err)
+	}
+	if !save {
+		return storage.BacktestRun{CandleSetID: set.ID, Result: result}, nil
 	}
 	run, err := s.store.SaveBacktestRun(ctx, set.ID, result)
 	if err != nil {

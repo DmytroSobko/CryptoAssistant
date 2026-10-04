@@ -110,6 +110,31 @@ func TestDipAccumulationBreakEvenFloorBlocksBelowCostDrawdownExit(t *testing.T) 
 	}
 }
 
+func TestDipAccumulationDoesNotRearmDrawdownLevelsAtNewHigh(t *testing.T) {
+	config := dipAccumulationConfig()
+	state := PersistedState{
+		Asset: "BTC", CurrentState: StateExiting, EntryStep: 3,
+		FirstEntryReferencePrice: 100, HighestPrice: 120, PositionOpen: true,
+		ProfitTaken: true, Drawdown1Triggered: true,
+	}
+	position := portfolio.Asset{Symbol: "BTC", Quantity: 1, AverageEntryPrice: 100}
+
+	result, state := Evaluate(candleFixture([]float64{100, 125}), position, config, state)
+	if result.Action != ActionHold || state.HighestPrice != 125 || !state.Drawdown1Triggered {
+		t.Fatalf("new high re-armed a consumed drawdown level: result=%+v state=%+v", result, state)
+	}
+
+	result, state = Evaluate(candleFixture([]float64{100, 112.5}), position, config, state)
+	if result.Action != ActionHold || !state.Drawdown1Triggered {
+		t.Fatalf("consumed drawdown level triggered again: result=%+v state=%+v", result, state)
+	}
+
+	result, state = Evaluate(candleFixture([]float64{100, 106.25}), position, config, state)
+	if result.Action != ActionSellDrawdown || !state.Drawdown2Triggered {
+		t.Fatalf("next unused drawdown level did not trigger: result=%+v state=%+v", result, state)
+	}
+}
+
 func TestReconcileRejectedProtectedDrawdownRestoresOnlyDrawdownTriggers(t *testing.T) {
 	previous := PersistedState{HighestPrice: 120, Drawdown1Triggered: true}
 	candidate := PersistedState{HighestPrice: 120, Drawdown1Triggered: true, Drawdown2Triggered: true, Drawdown3Triggered: true, CurrentState: StateExiting}

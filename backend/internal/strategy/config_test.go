@@ -18,7 +18,7 @@ func TestValidateConfig(t *testing.T) {
 		{"zero pivot", func() Config { cfg := valid; cfg.PivotLeft = 0; return cfg }(), false},
 		{"unknown trend", func() Config { cfg := valid; cfg.TrendMode = "MAYBE"; return cfg }(), false},
 		{"over allocated entries", func() Config { cfg := valid; cfg.Entry3Pct = 40; return cfg }(), false},
-		{"reversed profit triggers", func() Config { cfg := valid; cfg.ProfitTrigger2Pct = 5; return cfg }(), false},
+		{"unused legacy profit trigger ignored", func() Config { cfg := valid; cfg.ProfitTrigger2Pct = 0; return cfg }(), true},
 		{"shallow second drawdown", func() Config { cfg := valid; cfg.Drawdown2Pct = -5; return cfg }(), false},
 		{"non-finite", func() Config { cfg := valid; cfg.ProfitTakePct = math.NaN(); return cfg }(), false},
 		{"enabled ATH override missing threshold", func() Config { cfg := valid; cfg.ATHEntryOverrideEnabled = true; return cfg }(), false},

@@ -11,20 +11,14 @@ import (
 )
 
 func DefaultStrategyConfig(symbol string) strategy.Config {
-	if symbol == "ETH" {
-		return strategy.Config{PullbackMinPct: 15, PivotLeft: 2, PivotRight: 2, TrendMode: "STRICT", Entry1Pct: 40, Entry2Pct: 30, Entry3Pct: 30, ProfitTrigger1Pct: 15, ProfitTrigger2Pct: 20, ProfitTakePct: 25, Drawdown1Pct: -12, Drawdown1SellPct: 33.33, Drawdown2Pct: -18, Drawdown2SellPct: 50, Drawdown3Pct: -25, Drawdown3SellPct: 100}
-	}
-	return strategy.Config{PullbackMinPct: 10, PivotLeft: 2, PivotRight: 2, TrendMode: "STRICT", Entry1Pct: 40, Entry2Pct: 30, Entry3Pct: 30, ProfitTrigger1Pct: 10, ProfitTrigger2Pct: 20, ProfitTakePct: 25, Drawdown1Pct: -10, Drawdown1SellPct: 33.33, Drawdown2Pct: -15, Drawdown2SellPct: 50, Drawdown3Pct: -20, Drawdown3SellPct: 100}
+	return strategy.Config{PullbackMinPct: 15, PivotLeft: 2, PivotRight: 2, TrendMode: "STRICT", Entry1Pct: 20, Entry2Pct: 30, Entry3Pct: 50, ProfitTrigger1Pct: 50, ProfitTakePct: 25, Drawdown1Pct: -5, Drawdown1SellPct: 25, Drawdown2Pct: -8, Drawdown2SellPct: 50, Drawdown3Pct: -10, Drawdown3SellPct: 100}
 }
 
 func DefaultDipAccumulationConfig(symbol string) strategy.Config {
 	config := DefaultStrategyConfig(symbol)
 	config.StrategyID = strategy.StrategyDipAccumulation
-	config.Entry2DipFromFirstPct = 10
-	config.Entry3DipFromFirstPct = 20
-	config.Drawdown1SellPct = 33.33
-	config.Drawdown2SellPct = 50
-	config.Drawdown3SellPct = 100
+	config.Entry2DipFromFirstPct = 5
+	config.Entry3DipFromFirstPct = 10
 	config.EstimatedSellFeeBps = 10
 	config.BreakEvenExitFloorEnabled = true
 	return config
@@ -35,7 +29,7 @@ func DefaultAssetStrategySettings(symbol string) strategy.AssetStrategySettings 
 		SelectedStrategyID: strategy.StrategyRecoveryBreakout,
 		RecoveryBreakout:   DefaultStrategyConfig(symbol),
 		DipAccumulation:    DefaultDipAccumulationConfig(symbol),
-		ATHEntryOverride:   strategy.ATHEntryOverrideSettings{Enabled: false, ThresholdPct: 60},
+		ATHEntryOverride:   strategy.ATHEntryOverrideSettings{Enabled: true, ThresholdPct: 60},
 	}
 }
 

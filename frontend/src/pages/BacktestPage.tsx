@@ -3,7 +3,7 @@ import { api } from "../api/client";
 import { BacktestEquityChart } from "../components/BacktestEquityChart";
 import { BacktestSummary } from "../components/BacktestSummary";
 import { BacktestTradeTable } from "../components/BacktestTradeTable";
-import type { AssetStrategySettings, AssetSymbol, BacktestCandleSet, BacktestResult, BacktestRunSummary, StrategyConfig, StrategyID } from "../types/api";
+import type { AssetStrategySettings, AssetSymbol, BacktestCandleSet, BacktestResult, BacktestRunInput, BacktestRunSummary, StrategyConfig, StrategyID } from "../types/api";
 
 const assets: AssetSymbol[] = ["BTC", "ETH"];
 type SharedNumericField = Exclude<keyof StrategyConfig, "trendMode" | "strategyId" | "entry2DipFromFirstPct" | "entry3DipFromFirstPct" | "estimatedSellFeeBps" | "breakEvenExitFloorEnabled" | "athEntryOverrideEnabled" | "athEntryThresholdPct" | "athReferencePeak">;
@@ -13,7 +13,7 @@ type EditableNumericField = SharedNumericField | DipNumericField;
 const sharedFields: Array<{ field: SharedNumericField; label: string; step?: number }> = [
   { field: "pullbackMinPct", label: "Pullback minimum (%)" }, { field: "pivotLeft", label: "Pivot left", step: 1 }, { field: "pivotRight", label: "Pivot right", step: 1 }, { field: "breakoutBufferPct", label: "Breakout buffer (%)" },
   { field: "entry1Pct", label: "Entry 1 (%)" }, { field: "entry2Pct", label: "Entry 2 (%)" }, { field: "entry3Pct", label: "Entry 3 (%)" },
-  { field: "profitTrigger1Pct", label: "Profit trigger 1 (%)" }, { field: "profitTrigger2Pct", label: "Profit trigger 2 (%)" }, { field: "profitTakePct", label: "Profit take (%)" },
+  { field: "profitTrigger1Pct", label: "Profit trigger (%)" }, { field: "profitTakePct", label: "Profit take (%)" },
   { field: "drawdown1Pct", label: "Drawdown 1 (%)" }, { field: "drawdown1SellPct", label: "Drawdown 1 sell (%)" }, { field: "drawdown2Pct", label: "Drawdown 2 (%)" }, { field: "drawdown2SellPct", label: "Drawdown 2 sell (%)" }, { field: "drawdown3Pct", label: "Drawdown 3 (%)" }, { field: "drawdown3SellPct", label: "Drawdown 3 sell (%)" },
 ];
 const dipFields: Array<{ field: DipNumericField; label: string }> = [
@@ -34,11 +34,10 @@ function configForStrategy(settings: AssetStrategySettings, id: StrategyID): Str
 function validateConfig(config: StrategyConfig): string | null {
   if (sharedFields.some(({ field }) => !Number.isFinite(config[field]))) return "Every strategy setting must be a finite number.";
   if (!Number.isInteger(config.pivotLeft) || !Number.isInteger(config.pivotRight) || config.pivotLeft < 1 || config.pivotRight < 1) return "Pivot windows must be whole numbers of at least 1.";
-  const positive = [config.pullbackMinPct, config.entry1Pct, config.entry2Pct, config.entry3Pct, config.profitTrigger1Pct, config.profitTrigger2Pct, config.profitTakePct, config.drawdown1SellPct, config.drawdown2SellPct, config.drawdown3SellPct];
+  const positive = [config.pullbackMinPct, config.entry1Pct, config.entry2Pct, config.entry3Pct, config.profitTrigger1Pct, config.profitTakePct, config.drawdown1SellPct, config.drawdown2SellPct, config.drawdown3SellPct];
   if (positive.some((value) => value <= 0 || value > 100) || config.breakoutBufferPct < 0 || config.breakoutBufferPct > 100) return "Configured percentages must be within their supported ranges.";
   if (config.entry1Pct + config.entry2Pct + config.entry3Pct > 100) return "Entry percentages cannot total more than 100%.";
   if (config.athEntryOverrideEnabled && (!Number.isFinite(config.athEntryThresholdPct) || config.athEntryThresholdPct! <= 0 || config.athEntryThresholdPct! > 100)) return "Historical-peak entry threshold must be greater than 0 and at most 100%.";
-  if (config.profitTrigger2Pct < config.profitTrigger1Pct) return "Profit trigger 2 must be at or above profit trigger 1.";
   if (!(config.drawdown1Pct < 0 && config.drawdown1Pct >= -100 && config.drawdown2Pct < config.drawdown1Pct && config.drawdown2Pct >= -100 && config.drawdown3Pct < config.drawdown2Pct && config.drawdown3Pct >= -100)) return "Drawdown thresholds must become progressively deeper between -100% and 0%.";
   if (strategyID(config) === "DIP_ACCUMULATION") {
     const entry2Dip = config.entry2DipFromFirstPct;
@@ -81,6 +80,9 @@ export function BacktestPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isImporting, setIsImporting] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [draftInput, setDraftInput] = useState<BacktestRunInput | null>(null);
+  const [savedRunsOpen, setSavedRunsOpen] = useState(false);
   const [isLoadingRun, setIsLoadingRun] = useState(false);
   const [deletingRunID, setDeletingRunID] = useState<string | null>(null);
   const [pendingDeleteRunID, setPendingDeleteRunID] = useState<string | null>(null);
@@ -117,8 +119,12 @@ export function BacktestPage() {
   }, [asset]);
 
   function selectCandleSet(set: BacktestCandleSet) { setSelectedSetID(set.id); setStart(warmupStart(set)); setEnd(dateValue(set.lastTimestamp)); }
-  function selectAsset(candidate: AssetSymbol) { setAsset(candidate); }
+  function selectAsset(candidate: AssetSymbol) {
+    if (isRunning || isSaving || isLoadingRun) return;
+    setAsset(candidate);
+  }
   function selectBacktestStrategy(candidate: StrategyID) {
+    if (isRunning || isSaving || isLoadingRun) return;
     const profile = profiles[asset];
     if (!profile) return;
     setBacktestStrategies((current) => ({ ...current, [asset]: candidate }));
@@ -148,15 +154,29 @@ export function BacktestPage() {
     if (validation || !config || !selectedSet) { setError(validation ?? "Backtest settings are incomplete."); return; }
     setIsRunning(true);
     try {
-      const run = await api.createBacktest({ candleSetId: selectedSet.id, asset, start: `${start}T00:00:00Z`, end: `${end}T00:00:00Z`, startingCashUsd: startingCash, strategyConfig: config, feeBps, slippageBps, executionModel: "NEXT_DAILY_OPEN" });
+      const input: BacktestRunInput = { candleSetId: selectedSet.id, asset, start: `${start}T00:00:00Z`, end: `${end}T00:00:00Z`, startingCashUsd: startingCash, strategyConfig: { ...config }, feeBps, slippageBps, executionModel: "NEXT_DAILY_OPEN" };
+      const run = await api.previewBacktest(input);
       setResult(run.result);
-      setLoadedRunID(run.id);
-      setRuns((current) => [{ id: run.id, candleSetId: run.candleSetId, asset: run.result.request.asset, start: run.result.request.start, end: run.result.request.end, startingCashUsd: run.result.summary.startingCashUsd, returnPct: run.result.summary.returnPct, maximumDrawdownPct: run.result.summary.maximumDrawdownPct, strategyId: strategyID(run.result.request.strategyConfig), createdAt: run.createdAt, completedAt: run.completedAt }, ...current]);
-      setNotice("Backtest completed and saved locally. Live advisory data was not changed.");
+      setLoadedRunID(null);
+      setDraftInput(input);
+      setNotice("Backtest completed. Click Save run to keep this result in the archive.");
     } catch (runError) { setError(displayError(runError)); } finally { setIsRunning(false); }
   }
 
+  async function saveRun() {
+    if (!draftInput || loadedRunID || isSaving) return;
+    setIsSaving(true); setError(null); setNotice(null);
+    try {
+      // Replays the exact completed request against its immutable candle set.
+      const run = await api.createBacktest(draftInput);
+      setResult(run.result); setLoadedRunID(run.id); setDraftInput(null);
+      setRuns((current) => [{ id: run.id, candleSetId: run.candleSetId, asset: run.result.request.asset, start: run.result.request.start, end: run.result.request.end, startingCashUsd: run.result.summary.startingCashUsd, returnPct: run.result.summary.returnPct, maximumDrawdownPct: run.result.summary.maximumDrawdownPct, strategyId: strategyID(run.result.request.strategyConfig), createdAt: run.createdAt, completedAt: run.completedAt }, ...current]);
+      setNotice("Backtest run saved locally.");
+    } catch (saveError) { setError(displayError(saveError)); } finally { setIsSaving(false); }
+  }
+
   async function loadRun(id: string) {
+    if (isRunning || isSaving || isLoadingRun) return;
     setError(null); setNotice(null); setIsLoadingRun(true);
     try { const run = await api.backtest(id); setResult(run.result); setLoadedRunID(id); } catch (loadError) { setError(displayError(loadError)); } finally { setIsLoadingRun(false); }
   }
@@ -195,23 +215,23 @@ export function BacktestPage() {
     <form className="backtest-run-form" onSubmit={runBacktest}><section className="backtest-panel"><div className="backtest-section-heading"><div><p className="eyebrow">Run-local settings</p><h2>Simulation setup</h2></div><p className="muted">Copied from the selected {asset} strategy; edits here do not save to the live strategy.</p></div>
       <div className="backtest-form-grid"><label className="field"><span>Start date</span><input disabled={!selectedSet} max={selectedSet ? dateValue(selectedSet.lastTimestamp) : undefined} min={selectedSet ? warmupStart(selectedSet) : undefined} onChange={(event) => setStart(event.target.value)} type="date" value={start} /></label><label className="field"><span>End date</span><input disabled={!selectedSet} max={selectedSet ? dateValue(selectedSet.lastTimestamp) : undefined} min={start || undefined} onChange={(event) => setEnd(event.target.value)} type="date" value={end} /></label><label className="field"><span>Starting cash (USD)</span><input min="0" onChange={(event) => setStartingCash(Number(event.target.value))} step="any" type="number" value={startingCash} /></label><label className="field"><span>Fees (bps per fill)</span><input min="0" onChange={(event) => setFeeBps(Number(event.target.value))} step="any" type="number" value={feeBps} /></label><label className="field"><span>Slippage (bps per fill)</span><input min="0" onChange={(event) => setSlippageBps(Number(event.target.value))} step="any" type="number" value={slippageBps} /></label><label className="field"><span>Execution model</span><input disabled value="NEXT DAILY OPEN" /></label></div>
       <details className="backtest-config"><summary>Strategy configuration snapshot — {config ? strategyName(strategyID(config)) : "Loading"}</summary>{config && <><div className="backtest-config-grid"><label className="field"><span>Trend mode</span><select onChange={(event) => setConfig((current) => current ? { ...current, trendMode: event.target.value as StrategyConfig["trendMode"] } : current)} value={config.trendMode}><option value="STRICT">STRICT</option><option value="RECOVERY">RECOVERY</option><option value="OFF">OFF</option></select></label>{sharedFields.map(({ field, label, step }) => <label className="field" key={field}><span>{label}</span><input onChange={(event) => updateNumeric(field, event)} step={step ?? "any"} type="number" value={config[field]} /></label>)}{isDipAccumulation && dipFields.map(({ field, label }) => <label className="field" key={field}><span>{label}</span><input min="0" onChange={(event) => updateNumeric(field, event)} step="any" type="number" value={config[field] ?? ""} /></label>)}</div><section className="backtest-strategy-note"><label className="checkbox-field"><input checked={config.athEntryOverrideEnabled ?? false} onChange={(event) => setConfig((current) => current ? { ...current, athEntryOverrideEnabled: event.target.checked } : current)} type="checkbox" /> Enable historical-peak Entry 1 override for this run</label><label className="field"><span>Buy at or below (% of prior historical peak)</span><input disabled={!config.athEntryOverrideEnabled} max="100" min="0.0001" onChange={(event) => setConfig((current) => current ? { ...current, athEntryThresholdPct: Number(event.target.value) } : current)} step="any" type="number" value={config.athEntryThresholdPct ?? 60} /></label><p>Run-local only. Uses each simulated day’s completed close and the highest daily high available before that day, never a future peak.</p></section>{isDipAccumulation && <p className="backtest-strategy-note">Dip Accumulation uses the actual simulated Entry 1 fill as its fixed reference. It first takes the configured profit; only then do drawdown exits activate, subject to the break-even floor at the next daily open.</p>}</>}</details>
-      <div className="form-actions"><button className="primary-button" disabled={isRunning || !selectedSet || !config} type="submit">{isRunning ? "Running backtest…" : "Run backtest"}</button></div>
+      <div className="form-actions"><button className="primary-button" disabled={isRunning || isSaving || !selectedSet || !config} type="submit">{isRunning ? "Running backtest…" : "Run backtest"}</button></div>
     </section></form>
 
-    {result && <><BacktestSummary asset={result.request.asset} result={result} /><BacktestEquityChart points={result.equityCurve} /><BacktestTradeTable signals={result.signals} trades={result.trades} /></>}
+    {result && <><div className="form-actions"><button className="primary-button" disabled={isSaving || isRunning || !!loadedRunID || !draftInput} onClick={() => void saveRun()} type="button">{isSaving ? "Saving…" : loadedRunID ? "Run saved" : "Save run"}</button></div><BacktestSummary asset={result.request.asset} result={result} /><BacktestEquityChart points={result.equityCurve} /><BacktestTradeTable signals={result.signals} trades={result.trades} /></>}
     <section className="backtest-results-section">
-      <div className="backtest-section-heading"><div><p className="eyebrow">Read-only archive</p><h2>Saved runs</h2></div></div>
-      {runs.length === 0 ? <p className="muted">Completed backtests will remain available here.</p> : <div className="saved-runs">{runs.map((run) => <div className="saved-run" key={run.id}>
+      <div className="backtest-section-heading"><div><p className="eyebrow">Read-only archive</p><h2>Saved runs ({runs.length})</h2></div><button aria-expanded={savedRunsOpen} className="secondary-button" onClick={() => setSavedRunsOpen((open) => !open)} type="button">{savedRunsOpen ? "Hide" : "Show"}</button></div>
+      {savedRunsOpen && (runs.length === 0 ? <p className="muted">Click Save run after a simulation to keep it here.</p> : <div className="saved-runs">{runs.map((run) => <div className="saved-run" key={run.id}>
         <div><strong>{run.asset} · {strategyName(run.strategyId)} · {run.start.slice(0, 10)} to {run.end.slice(0, 10)}</strong><span>Created {new Date(run.createdAt).toLocaleDateString()} · ${run.startingCashUsd.toLocaleString()} starting capital</span></div>
         <div><span className={run.returnPct >= 0 ? "metric--positive" : "metric--negative"}>{run.returnPct >= 0 ? "+" : ""}{run.returnPct.toFixed(2)}%</span><small>max DD {run.maximumDrawdownPct.toFixed(2)}%</small></div>
         <div className="saved-run-actions">
-          <button className="secondary-button" disabled={isLoadingRun || deletingRunID !== null} onClick={() => void loadRun(run.id)} type="button">{isLoadingRun ? "Loading…" : "View"}</button>
+          <button className="secondary-button" disabled={isLoadingRun || isRunning || isSaving || deletingRunID !== null} onClick={() => void loadRun(run.id)} type="button">{isLoadingRun ? "Loading…" : "View"}</button>
           {pendingDeleteRunID === run.id ? <>
             <button className="secondary-button danger-button" disabled={deletingRunID !== null} onClick={() => void deleteRun(run.id)} type="button">{deletingRunID === run.id ? "Deleting…" : "Confirm delete"}</button>
             <button className="secondary-button" disabled={deletingRunID !== null} onClick={() => setPendingDeleteRunID(null)} type="button">Cancel</button>
           </> : <button className="secondary-button danger-button" disabled={deletingRunID !== null} onClick={() => setPendingDeleteRunID(run.id)} type="button">Delete</button>}
         </div>
-      </div>)}</div>}
+      </div>)}</div>)}
       <p className="backtest-help">Delete removes the saved simulation and its audit data. Imported candle sets are kept.</p>
     </section>
   </section>;

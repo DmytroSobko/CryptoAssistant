@@ -61,8 +61,18 @@ func TestMigrateIsIdempotentAndConfigDefaultsAreIndependent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get ETH config: %v", err)
 	}
-	if btc.PullbackMinPct != 10 || eth.PullbackMinPct != 15 {
+	if btc.PullbackMinPct != 15 || eth.PullbackMinPct != 15 {
 		t.Fatalf("unexpected independent defaults: BTC=%+v ETH=%+v", btc, eth)
+	}
+	for _, asset := range []string{"BTC", "ETH"} {
+		profile, err := store.GetAssetStrategySettings(context.Background(), asset)
+		if err != nil {
+			t.Fatal(err)
+		}
+		want, err := DefaultAssetStrategySettings(asset).Normalized()
+		if err != nil || profile != want {
+			t.Fatalf("%s migrated defaults differ from constructor: got=%+v want=%+v err=%v", asset, profile, want, err)
+		}
 	}
 }
 
@@ -194,7 +204,7 @@ func TestPerAssetStrategyProfilesKeepConfigurationsAndStatesIndependent(t *testi
 	if profile.SelectedStrategyID != strategy.StrategyRecoveryBreakout || profile.RecoveryBreakout.StrategyID != strategy.StrategyRecoveryBreakout || profile.DipAccumulation.StrategyID != strategy.StrategyDipAccumulation {
 		t.Fatalf("unexpected migrated BTC profile: %+v", profile)
 	}
-	if profile.ATHEntryOverride.Enabled || profile.ATHEntryOverride.ThresholdPct != 60 {
+	if !profile.ATHEntryOverride.Enabled || profile.ATHEntryOverride.ThresholdPct != 60 {
 		t.Fatalf("unexpected default BTC ATH entry override: %+v", profile.ATHEntryOverride)
 	}
 
@@ -204,6 +214,7 @@ func TestPerAssetStrategyProfilesKeepConfigurationsAndStatesIndependent(t *testi
 	}
 	profile.SelectedStrategyID = strategy.StrategyDipAccumulation
 	profile.DipAccumulation.Entry1Pct = 35
+	profile.DipAccumulation.Entry3Pct = 35
 	profile.ATHEntryOverride = strategy.ATHEntryOverrideSettings{Enabled: true, ThresholdPct: 55}
 	if err := store.SaveAssetStrategySettings(context.Background(), "BTC", profile); err != nil {
 		t.Fatal(err)
@@ -217,7 +228,7 @@ func TestPerAssetStrategyProfilesKeepConfigurationsAndStatesIndependent(t *testi
 		t.Fatalf("stored BTC ATH entry override=%+v err=%v", storedProfile.ATHEntryOverride, err)
 	}
 	ethProfile, err := store.GetAssetStrategySettings(context.Background(), "ETH")
-	if err != nil || ethProfile.ATHEntryOverride.Enabled || ethProfile.ATHEntryOverride.ThresholdPct != 60 {
+	if err != nil || !ethProfile.ATHEntryOverride.Enabled || ethProfile.ATHEntryOverride.ThresholdPct != 60 {
 		t.Fatalf("ETH override was changed with BTC: %+v err=%v", ethProfile.ATHEntryOverride, err)
 	}
 	dipState, err := store.GetStrategyState(context.Background(), "BTC")

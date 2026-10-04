@@ -122,7 +122,7 @@ func TestEvaluateUsesCompletedCloseNotLatestCandleHigh(t *testing.T) {
 	}
 }
 
-func TestEvaluateProfitAndDrawdownAreOneTimePerHighWaterCycle(t *testing.T) {
+func TestEvaluateProfitAndDrawdownAreOneTimePerPositionCycle(t *testing.T) {
 	config := engineConfig(TrendModeOff)
 	position := portfolio.Asset{Symbol: "BTC", Quantity: 1, AverageEntryPrice: 100}
 
@@ -145,12 +145,12 @@ func TestEvaluateProfitAndDrawdownAreOneTimePerHighWaterCycle(t *testing.T) {
 		t.Fatalf("drawdown action repeated: result=%+v state=%+v", noRepeat, state)
 	}
 	newHigh, state := Evaluate(candleFixture([]float64{100, 125}), position, config, state)
-	if newHigh.Action != ActionHold || state.HighestPrice != 125 || state.Drawdown1Triggered {
-		t.Fatalf("new high did not reset drawdown cycle: result=%+v state=%+v", newHigh, state)
+	if newHigh.Action != ActionHold || state.HighestPrice != 125 || !state.Drawdown1Triggered {
+		t.Fatalf("new high re-armed a consumed drawdown level: result=%+v state=%+v", newHigh, state)
 	}
 	drawdown, state = Evaluate(candleFixture([]float64{100, 112.5}), position, config, state)
-	if drawdown.Action != ActionSellDrawdown || drawdown.ActionPct != 20 || !state.Drawdown1Triggered {
-		t.Fatalf("reset drawdown cycle did not trigger: result=%+v state=%+v", drawdown, state)
+	if drawdown.Action != ActionHold || !state.Drawdown1Triggered {
+		t.Fatalf("consumed drawdown level triggered again: result=%+v state=%+v", drawdown, state)
 	}
 }
 

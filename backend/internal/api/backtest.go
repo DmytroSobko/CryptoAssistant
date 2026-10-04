@@ -57,6 +57,14 @@ func (s *Server) handleListBacktestCandleSets(w http.ResponseWriter, r *http.Req
 }
 
 func (s *Server) handleCreateBacktest(w http.ResponseWriter, r *http.Request) {
+	s.handleRunBacktest(w, r, true)
+}
+
+func (s *Server) handlePreviewBacktest(w http.ResponseWriter, r *http.Request) {
+	s.handleRunBacktest(w, r, false)
+}
+
+func (s *Server) handleRunBacktest(w http.ResponseWriter, r *http.Request, save bool) {
 	var input createBacktestInput
 	if err := decodeJSON(r, &input); err != nil {
 		writeDecodeError(w, err)
@@ -67,7 +75,11 @@ func (s *Server) handleCreateBacktest(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "asset must be BTC or ETH")
 		return
 	}
-	run, err := s.backtestService.Run(r.Context(), backtestservice.RunRequest{CandleSetID: input.CandleSetID, Request: backtest.Request{Asset: asset, Start: input.Start, End: input.End, StartingCashUSD: input.StartingCashUSD, StrategyConfig: input.StrategyConfig, FeeBps: input.FeeBps, SlippageBps: input.SlippageBps, ExecutionModel: backtest.ExecutionModel(input.ExecutionModel)}})
+	runSimulation := s.backtestService.Preview
+	if save {
+		runSimulation = s.backtestService.Run
+	}
+	run, err := runSimulation(r.Context(), backtestservice.RunRequest{CandleSetID: input.CandleSetID, Request: backtest.Request{Asset: asset, Start: input.Start, End: input.End, StartingCashUSD: input.StartingCashUSD, StrategyConfig: input.StrategyConfig, FeeBps: input.FeeBps, SlippageBps: input.SlippageBps, ExecutionModel: backtest.ExecutionModel(input.ExecutionModel)}})
 	if err != nil {
 		writeBacktestError(w, err)
 		return

@@ -205,9 +205,6 @@ func evaluateRecoveryBreakout(candles []market.Candle, position portfolio.Asset,
 		result.ProfitLossPct = percentChange(position.AverageEntryPrice, price)
 		if state.HighestPrice <= 0 || price > state.HighestPrice {
 			state.HighestPrice = price
-			state.Drawdown1Triggered = false
-			state.Drawdown2Triggered = false
-			state.Drawdown3Triggered = false
 		}
 		state.DrawdownPct = percentChange(state.HighestPrice, price)
 		result.DrawdownFromHighPct = state.DrawdownPct

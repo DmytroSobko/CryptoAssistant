@@ -61,8 +61,8 @@ func TestBacktestingMigrationUpgradesAnExistingMVPDatabase(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if profile.SelectedStrategyID != strategy.StrategyRecoveryBreakout || profile.RecoveryBreakout.Entry1Pct != 35 {
-		t.Fatalf("legacy settings were not migrated: %+v", profile)
+	if profile.SelectedStrategyID != strategy.StrategyRecoveryBreakout || profile.RecoveryBreakout.Entry1Pct != 20 {
+		t.Fatalf("legacy settings were not upgraded to the requested defaults: %+v", profile)
 	}
 	state, err := getStrategyStateForStrategy(context.Background(), store.DB(), "BTC", strategy.StrategyRecoveryBreakout)
 	if err != nil {

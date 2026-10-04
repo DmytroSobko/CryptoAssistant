@@ -28,7 +28,6 @@ export function BacktestSummary({ asset, result }: { asset: AssetSymbol; result:
         {assumptions.athEntryOverride && <span>{assumptions.athEntryOverride}</span>}
         <span>Taxes excluded · {summary.rejectedTradeCount} rejected · {summary.unexecutedTradeCount} unexecuted</span>
         {isDipAccumulation && <><span>{assumptions.referencePricePolicy}</span><span>{assumptions.breakEvenExitFloor}</span></>}
-        <span>{assumptions.profitTrigger2Implementation}</span>
       </div>
     </section>
   );

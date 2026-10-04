@@ -53,6 +53,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /api/backtest/candle-sets", s.handleImportBacktestCandleSet)
 	mux.HandleFunc("GET /api/backtest/candle-sets", s.handleListBacktestCandleSets)
 	mux.HandleFunc("POST /api/backtests", s.handleCreateBacktest)
+	mux.HandleFunc("POST /api/backtests/preview", s.handlePreviewBacktest)
 	mux.HandleFunc("GET /api/backtests", s.handleListBacktests)
 	mux.HandleFunc("GET /api/backtests/{id}", s.handleGetBacktest)
 	mux.HandleFunc("DELETE /api/backtests/{id}", s.handleDeleteBacktest)

@@ -115,7 +115,7 @@ not change the other asset or execute a trade.
 
 Dip Accumulation uses the normal recovery/trend gate for Entry 1. Entries 2
 and 3 then occur at configured dips below the fixed first-entry reference
-(defaults: 10% and 20%). It must first reach its configured profit target;
+(defaults: 5% and 10%). It must first reach its configured profit target;
 only then do drawdown exits activate, requiring estimated net proceeds to meet
 the remaining weighted-average entry price. This can keep an underwater
 position open for a long time; it does not guarantee a profitable campaign or
@@ -124,8 +124,9 @@ a manual market-order fill.
 ### Backtests
 
 The **Backtests** page is separate from the Dashboard and History. It imports
-one BTC or ETH historical candle set, runs one asset at a time, and saves a
-read-only result. A backtest never reads or changes the live portfolio, live
+one BTC or ETH historical candle set, runs one asset at a time, and previews a
+result. Click **Save run** to keep it in the collapsible saved-runs archive.
+A backtest never reads or changes the live portfolio, live
 strategy state, live advisory History, or live market snapshots.
 
 Choose a CSV file and give it a meaningful source label, such as `Coinbase
@@ -188,14 +189,13 @@ cannot revise its historical result.
   comparison is recorded as `REJECTED_BREAK_EVEN_FLOOR`; it does not consume
   the drawdown level and may be eligible again later.
 - Equity is marked at each completed daily close. Taxes are excluded.
-- The current strategy engine stores and validates `ProfitTrigger2Pct`, but
-  does not implement it as a separate sell rule. The backtester reports that
-  behavior; it does not invent an additional trade.
+- `ProfitTrigger2Pct` is retained only for compatibility with older snapshots.
+  It has no sell rule and is not editable or validated.
 
 Example walkthrough: import a validated BTC daily CSV, select the imported
 set, leave the initial USD 10,000 / 10 bps / 5 bps defaults or enter explicit
 alternatives, set an in-range period with the required warm-up, then select
-**Run backtest**. Inspect the saved result's fingerprint, assumptions, signals
+**Run backtest**. Inspect the preview's fingerprint, assumptions, signals
 and fills before comparing the reported return with buy-and-hold. These are
 hypothetical historical outcomes, not a performance claim or investment
 recommendation.
@@ -216,6 +216,7 @@ recommendation.
 | `POST` | `/api/backtest/candle-sets` | Import a validated historical CSV as an immutable candle set |
 | `GET` | `/api/backtest/candle-sets?asset=BTC` | List imported BTC or ETH candle sets |
 | `POST` | `/api/backtests` | Run and save a synchronous hypothetical simulation |
+| `POST` | `/api/backtests/preview` | Run a simulation without saving it |
 | `GET` | `/api/backtests` | List saved backtest summaries |
 | `GET` | `/api/backtests/{id}` | Retrieve one saved backtest and its audit data |
 
