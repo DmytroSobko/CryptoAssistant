@@ -11,6 +11,9 @@ import (
 )
 
 func DefaultStrategyConfig(symbol string) strategy.Config {
+	if symbol == "ETH" {
+		return strategy.Config{PullbackMinPct: 35, PivotLeft: 2, PivotRight: 2, TrendMode: "STRICT", Entry1Pct: 20, Entry2Pct: 30, Entry3Pct: 50, ProfitTrigger1Pct: 60, ProfitTakePct: 25, Drawdown1Pct: -5, Drawdown1SellPct: 25, Drawdown2Pct: -7, Drawdown2SellPct: 50, Drawdown3Pct: -10, Drawdown3SellPct: 100}
+	}
 	return strategy.Config{PullbackMinPct: 15, PivotLeft: 2, PivotRight: 2, TrendMode: "STRICT", Entry1Pct: 20, Entry2Pct: 30, Entry3Pct: 50, ProfitTrigger1Pct: 50, ProfitTakePct: 25, Drawdown1Pct: -5, Drawdown1SellPct: 25, Drawdown2Pct: -8, Drawdown2SellPct: 50, Drawdown3Pct: -10, Drawdown3SellPct: 100}
 }
 
@@ -19,6 +22,10 @@ func DefaultDipAccumulationConfig(symbol string) strategy.Config {
 	config.StrategyID = strategy.StrategyDipAccumulation
 	config.Entry2DipFromFirstPct = 5
 	config.Entry3DipFromFirstPct = 10
+	if symbol == "ETH" {
+		config.Entry2DipFromFirstPct = 10
+		config.Entry3DipFromFirstPct = 20
+	}
 	config.EstimatedSellFeeBps = 10
 	config.BreakEvenExitFloorEnabled = true
 	return config

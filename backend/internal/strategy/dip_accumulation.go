@@ -44,9 +44,18 @@ func evaluateDipAccumulation(candles []market.Candle, position portfolio.Asset, 
 		state.DrawdownPct = percentChange(state.HighestPrice, price)
 		result.DrawdownFromHighPct = state.DrawdownPct
 
-		// Accumulation gets first priority while a configured dip level remains
-		// available. Without this order, a legacy drawdown exit at the same
-		// daily close would prevent the intended average-down entry.
+		// Reaching the profit target ends accumulation, even if some entry
+		// stages remain unused. Profit takes priority over another dip buy.
+		if !state.ProfitTaken && finitePositive(position.AverageEntryPrice) && validPositivePercentage(config.ProfitTakePct) &&
+			finitePositive(config.ProfitTrigger1Pct) && result.ProfitLossPct >= config.ProfitTrigger1Pct {
+			state.ProfitTaken = true
+			state.CurrentState = StateProfitProtection
+			return actionResult(result, state, config, ActionSellProfit, config.ProfitTakePct,
+				fmt.Sprintf("P/L is %.2f%%, at or above the configured %.2f%% profit trigger. Unused entry stages are cancelled for this position cycle.", result.ProfitLossPct, config.ProfitTrigger1Pct),
+				"Hold the remaining position and watch completed-candle drawdown exits; no further buys until this position closes."), state
+		}
+
+		// Before the profit milestone, continue the configured accumulation.
 		if entryPct, entryStep, threshold, ready := dipEntryAction(config, state, price, latest.Timestamp); ready {
 			state.EntryStep = entryStep
 			state.LastDipEntryAt = latest.Timestamp
@@ -62,19 +71,6 @@ func evaluateDipAccumulation(candles []market.Candle, position portfolio.Asset, 
 			return actionResult(result, state, config, buyAction(entryStep, entryPct), entryPct,
 				fmt.Sprintf("Completed daily close %.2f reached the Entry %d dip level of %.2f, %.2f%% below the %.2f first-entry signal reference.", price, entryStep, threshold, dipForStep(config, entryStep), state.FirstEntryReferencePrice),
 				nextCondition), state
-		}
-
-		// A Dip Accumulation campaign must first realise its configured profit
-		// take. Only that milestone enables subsequent trailing drawdown exits.
-		// This prevents a merely break-even drawdown sale from closing coins
-		// before the strategy has ever reached its profit objective.
-		if !state.ProfitTaken && finitePositive(position.AverageEntryPrice) && validPositivePercentage(config.ProfitTakePct) &&
-			finitePositive(config.ProfitTrigger1Pct) && result.ProfitLossPct >= config.ProfitTrigger1Pct {
-			state.ProfitTaken = true
-			state.CurrentState = StateProfitProtection
-			return actionResult(result, state, config, ActionSellProfit, config.ProfitTakePct,
-				fmt.Sprintf("P/L is %.2f%%, at or above the configured %.2f%% profit trigger.", result.ProfitLossPct, config.ProfitTrigger1Pct),
-				"Hold the remaining position and watch completed-candle drawdown exits."), state
 		}
 
 		if state.ProfitTaken {
@@ -97,6 +93,10 @@ func evaluateDipAccumulation(candles []market.Candle, position portfolio.Asset, 
 				result.BreakEvenFloorGrossPrice = floorGross
 				return result, state
 			}
+			state.CurrentState = dipHoldingState(state)
+			return holdResult(result, state, config,
+				"Profit-taking has ended accumulation for this position cycle.",
+				"Watch completed-candle drawdown exits; no further buys until this position closes."), state
 		}
 	}
 
@@ -184,6 +184,9 @@ func dipFirstEntry(result Result, candles []market.Candle, config Config, state 
 }
 
 func dipEntryAction(config Config, state PersistedState, price float64, at time.Time) (entryPct float64, entryStep int, threshold float64, ready bool) {
+	if state.ProfitTaken {
+		return 0, 0, 0, false
+	}
 	if !finitePositive(state.FirstEntryReferencePrice) {
 		return 0, 0, 0, false
 	}
@@ -236,6 +239,12 @@ func dipBreakEvenFloor(config Config, averageEntryPrice float64) (netFloor, gros
 }
 
 func dipHoldingState(state PersistedState) State {
+	if state.ProfitTaken {
+		if state.Drawdown1Triggered || state.Drawdown2Triggered || state.Drawdown3Triggered {
+			return StateExiting
+		}
+		return StateProfitProtection
+	}
 	if state.EntryStep >= 3 {
 		return StateFullPosition
 	}

@@ -121,6 +121,10 @@ the remaining weighted-average entry price. This can keep an underwater
 position open for a long time; it does not guarantee a profitable campaign or
 a manual market-order fill.
 
+The profit target applies to the current holdings even after only Entry 1 or
+Entry 2. For either strategy, signalling the profit sale cancels unused entry
+stages until the position closes and a fresh cycle begins.
+
 ### Backtests
 
 The **Backtests** page is separate from the Dashboard and History. It imports

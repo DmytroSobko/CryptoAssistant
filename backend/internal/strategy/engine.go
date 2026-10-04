@@ -222,8 +222,14 @@ func evaluateRecoveryBreakout(candles []market.Candle, position portfolio.Asset,
 			state.ProfitTaken = true
 			state.CurrentState = StateProfitProtection
 			return actionResult(result, state, config, ActionSellProfit, config.ProfitTakePct,
-				fmt.Sprintf("P/L is %.2f%%, at or above the configured %.2f%% profit trigger.", result.ProfitLossPct, config.ProfitTrigger1Pct),
-				"Hold the remaining position and watch completed-candle drawdown exits."), state
+				fmt.Sprintf("P/L is %.2f%%, at or above the configured %.2f%% profit trigger. Unused entry stages are cancelled for this position cycle.", result.ProfitLossPct, config.ProfitTrigger1Pct),
+				"Hold the remaining position and watch completed-candle drawdown exits; no further buys until this position closes."), state
+		}
+		if state.ProfitTaken {
+			state.CurrentState = dipHoldingState(state)
+			return holdResult(result, state, config,
+				"Profit-taking has ended accumulation for this position cycle.",
+				"Watch completed-candle drawdown exits; no further buys until this position closes."), state
 		}
 	}
 

@@ -61,7 +61,7 @@ func TestMigrateIsIdempotentAndConfigDefaultsAreIndependent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get ETH config: %v", err)
 	}
-	if btc.PullbackMinPct != 15 || eth.PullbackMinPct != 15 {
+	if btc.PullbackMinPct != 15 || eth.PullbackMinPct != 35 {
 		t.Fatalf("unexpected independent defaults: BTC=%+v ETH=%+v", btc, eth)
 	}
 	for _, asset := range []string{"BTC", "ETH"} {

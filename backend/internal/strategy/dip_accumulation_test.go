@@ -154,6 +154,23 @@ func dipAccumulationConfig() Config {
 	return config
 }
 
+func TestDipAccumulationProfitTakesPriorityOverUnusedDipBuy(t *testing.T) {
+	config := dipAccumulationConfig()
+	config.ProfitTrigger1Pct = 50
+	position := portfolio.Asset{Symbol: "BTC", Quantity: 1, AverageEntryPrice: 60}
+	state := PersistedState{EntryStep: 1, PositionOpen: true, FirstEntryReferencePrice: 100}
+	// This close qualifies both for a 10% dip entry and 50% profit.
+	result, state := Evaluate(candleFixture([]float64{100, 90}), position, config, state)
+	if result.Action != ActionSellProfit || !state.ProfitTaken || state.EntryStep != 1 {
+		t.Fatalf("dip buy took priority over profit: result=%+v state=%+v", result, state)
+	}
+	// Below Entry 2's threshold again, without a drawdown from the new high.
+	result, state = Evaluate(candleFixture([]float64{100, 89}), position, config, state)
+	if result.Action != ActionHold || result.State != StateProfitProtection || state.EntryStep != 1 {
+		t.Fatalf("unused dip stage resumed after profit: result=%+v state=%+v", result, state)
+	}
+}
+
 func dipCloseFixture(close float64, at time.Time) []market.Candle {
 	candles := candleFixture([]float64{100, close})
 	candles[len(candles)-1].Timestamp = at

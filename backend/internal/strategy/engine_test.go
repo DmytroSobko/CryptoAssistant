@@ -178,3 +178,30 @@ func engineConfig(mode string) Config {
 		Drawdown3Pct: -20, Drawdown3SellPct: 70,
 	}
 }
+
+func TestPartialPositionProfitEndsAccumulationForBothStrategies(t *testing.T) {
+	for _, id := range []StrategyID{StrategyRecoveryBreakout, StrategyDipAccumulation} {
+		for _, entryStep := range []int{1, 2} {
+			config := dipAccumulationConfig()
+			config.StrategyID = id
+			config.ProfitTrigger1Pct = 50
+			position := portfolio.Asset{Symbol: "BTC", Quantity: 1, AverageEntryPrice: 100}
+			state := PersistedState{EntryStep: entryStep, PositionOpen: true, FirstEntryReferencePrice: 100}
+			profit, state := Evaluate(candleFixture([]float64{100, 150}), position, config, state)
+			if profit.Action != ActionSellProfit || profit.ActionPct != 25 || !state.ProfitTaken || state.EntryStep != entryStep {
+				t.Fatalf("%s stage %d failed partial-position profit: result=%+v state=%+v", id, entryStep, profit, state)
+			}
+			// A later confirmed recovery breakout cannot resume unused buys.
+			state.HighestPrice = 96
+			hold, state := Evaluate(candleFixture([]float64{100, 120, 100, 80, 90, 85, 95, 96}), position, config, state)
+			if hold.Action != ActionHold || hold.State != StateProfitProtection || state.EntryStep != entryStep {
+				t.Fatalf("%s stage %d resumed accumulation: result=%+v state=%+v", id, entryStep, hold, state)
+			}
+			// Closing the position restores eligibility for a fresh cycle.
+			_, state = Evaluate(candleFixture([]float64{100, 96}), portfolio.Asset{Symbol: "BTC"}, config, state)
+			if state.ProfitTaken || state.EntryStep != 0 || state.PositionOpen {
+				t.Fatalf("%s failed to reset after closing: %+v", id, state)
+			}
+		}
+	}
+}
