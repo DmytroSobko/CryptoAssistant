@@ -203,7 +203,7 @@ func TestStrategySettingsEndpointsSelectAnAssetStrategyWithoutChangingTheOtherAs
 	if err := json.Unmarshal(active.Body.Bytes(), &configs); err != nil {
 		t.Fatal(err)
 	}
-	if configs["BTC"].StrategyID != strategy.StrategyDipAccumulation || configs["BTC"].Entry1Pct != 35 || configs["ETH"].StrategyID != strategy.StrategyRecoveryBreakout {
+	if configs["BTC"].StrategyID != strategy.StrategyDipAccumulation || configs["BTC"].Entry1Pct != 35 || configs["ETH"].StrategyID != strategy.StrategyDipAccumulation {
 		t.Fatalf("active configs=%+v", configs)
 	}
 }

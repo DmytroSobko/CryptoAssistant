@@ -32,8 +32,12 @@ func DefaultDipAccumulationConfig(symbol string) strategy.Config {
 }
 
 func DefaultAssetStrategySettings(symbol string) strategy.AssetStrategySettings {
+	selected := strategy.StrategyRecoveryBreakout
+	if symbol == "ETH" {
+		selected = strategy.StrategyDipAccumulation
+	}
 	return strategy.AssetStrategySettings{
-		SelectedStrategyID: strategy.StrategyRecoveryBreakout,
+		SelectedStrategyID: selected,
 		RecoveryBreakout:   DefaultStrategyConfig(symbol),
 		DipAccumulation:    DefaultDipAccumulationConfig(symbol),
 		ATHEntryOverride:   strategy.ATHEntryOverrideSettings{Enabled: true, ThresholdPct: 60},

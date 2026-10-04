@@ -181,7 +181,9 @@ cannot revise its historical result.
   day `t+1`.
 - Starting position is cash only. Starting cash is required (the UI defaults
   to USD 10,000).
-- Buys spend `ActionPct` of original starting cash, capped by available cash
+- Buys spend `ActionPct` of the cash available at the first buy of each cycle.
+  That budget stays fixed across staged entries; later cycles reinvest prior
+  net proceeds, including profits or losses. Buys are capped by available cash
   after fees. Sells use `ActionPct` of the quantity held when filled.
 - Default fees are 10 bps per fill and default slippage is 5 bps per fill.
   Buy fills use `next open × (1 + slippage)` and sell fills use `next open ×

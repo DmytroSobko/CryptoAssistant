@@ -98,7 +98,7 @@ func assumptionsFor(request Request) Assumptions {
 	assumptions := Assumptions{
 		ExecutionModel: request.ExecutionModel, SignalTiming: "Evaluate after each completed UTC daily candle close.",
 		FillTiming: "Assume-filled at the following UTC daily candle open.",
-		BuySizing:  "ActionPct of original starting cash, capped by available cash including fees.",
+		BuySizing:  "ActionPct of cash available at the first buy of each position cycle; this budget stays fixed for staged entries and compounds prior net proceeds. Buys are capped by available cash including fees.",
 		SellSizing: "ActionPct of quantity held at fill time, capped at available quantity.",
 		FeeBps:     request.FeeBps, SlippageBps: request.SlippageBps, NoMarginOrBorrowing: true, TaxesIncluded: false,
 		ProfitTrigger2Implementation: "Stored and validated by the strategy, but not a distinct current-engine sell rule.",

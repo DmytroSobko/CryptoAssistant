@@ -42,3 +42,40 @@ func TestEquityPointAndBuyAndHoldSummary(t *testing.T) {
 		t.Fatalf("drawdown = %v, want -20", third.DrawdownPct)
 	}
 }
+
+func TestBuyBudgetCompoundsBetweenCyclesAndStaysFixedWithinCycle(t *testing.T) {
+	for _, salePrice := range []float64{200, 50} {
+		request := fixtureRequest(entryFixture(), 199, 200)
+		request.FeeBps, request.SlippageBps = 10, 0
+		state := initialState("ETH", 10000)
+		first := execute(PendingOrder{Action: "BUY", ActionPct: 20}, candleAt(200, 100), &state, request, 1)
+		second := execute(PendingOrder{Action: "BUY", ActionPct: 30}, candleAt(201, 100), &state, request, 2)
+		if first.GrossNotionalUSD != 2000 || second.GrossNotionalUSD != 3000 {
+			t.Fatalf("first-cycle buys must use the fixed 10000 budget: %+v / %+v", first, second)
+		}
+		sale := execute(PendingOrder{Action: "SELL_DRAWDOWN", ActionPct: 100}, candleAt(202, salePrice), &state, request, 3)
+		if sale.Status != "EXECUTED" || state.Position.Quantity != 0 {
+			t.Fatalf("cycle did not close: %+v", sale)
+		}
+		budget := state.CashUSD
+		// Remaining cash plus net sale proceeds form the next fixed budget.
+		wantBudget := 4995 + 50*salePrice*.999
+		if math.Abs(budget-wantBudget) > 1e-9 {
+			t.Fatalf("budget=%f want=%f", budget, wantBudget)
+		}
+		next := execute(PendingOrder{Action: "BUY", ActionPct: 20}, candleAt(203, 100), &state, request, 4)
+		if math.Abs(next.GrossNotionalUSD-budget*.2) > 1e-9 || state.CycleBudgetUSD != budget {
+			t.Fatalf("next cycle did not compound cash: budget=%f trade=%+v", budget, next)
+		}
+		// Partial sale proceeds must not change the current cycle budget.
+		execute(PendingOrder{Action: "SELL_PROFIT", ActionPct: 25}, candleAt(204, 110), &state, request, 5)
+		staged := execute(PendingOrder{Action: "BUY", ActionPct: 30}, candleAt(205, 100), &state, request, 6)
+		if math.Abs(staged.GrossNotionalUSD-budget*.3) > 1e-9 || state.CycleBudgetUSD != budget {
+			t.Fatalf("staged entry changed its cycle budget: budget=%f trade=%+v", budget, staged)
+		}
+		final := execute(PendingOrder{Action: "BUY", ActionPct: 50}, candleAt(206, 100), &state, request, 7)
+		if math.Abs(final.GrossNotionalUSD-budget*.5) > 1e-9 || state.CashUSD < 0 {
+			t.Fatalf("third entry failed fixed-budget sizing: budget=%f trade=%+v", budget, final)
+		}
+	}
+}

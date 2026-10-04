@@ -41,10 +41,13 @@ type Assumptions struct {
 }
 
 type SimulationState struct {
-	CashUSD       float64                 `json:"cashUsd"`
-	Position      portfolio.Asset         `json:"position"`
-	StrategyState strategy.PersistedState `json:"strategyState"`
-	PendingOrder  *PendingOrder           `json:"pendingOrder,omitempty"`
+	CashUSD float64 `json:"cashUsd"`
+	// CycleBudgetUSD is fixed at the first buy of each position cycle.
+	// It includes cash retained and proceeds from all previous cycles.
+	CycleBudgetUSD float64                 `json:"cycleBudgetUsd"`
+	Position       portfolio.Asset         `json:"position"`
+	StrategyState  strategy.PersistedState `json:"strategyState"`
+	PendingOrder   *PendingOrder           `json:"pendingOrder,omitempty"`
 }
 
 type PendingOrder struct {

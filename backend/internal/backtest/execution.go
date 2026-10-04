@@ -40,14 +40,18 @@ func execute(order PendingOrder, candle market.Candle, state *SimulationState, r
 	feeRate := request.FeeBps / 10000
 	if side == "BUY" {
 		trade.FillPrice = candle.Open * (1 + slippage)
-		return executeBuy(trade, state, request.StartingCashUSD, feeRate)
+		return executeBuy(trade, state, feeRate)
 	}
 	trade.FillPrice = candle.Open * (1 - slippage)
 	return executeSell(trade, state, feeRate)
 }
 
-func executeBuy(trade Trade, state *SimulationState, startingCash, feeRate float64) Trade {
-	requestedNotional := startingCash * trade.RequestedPct / 100
+func executeBuy(trade Trade, state *SimulationState, feeRate float64) Trade {
+	cycleBudget := state.CycleBudgetUSD
+	if state.Position.Quantity <= epsilon {
+		cycleBudget = state.CashUSD
+	}
+	requestedNotional := cycleBudget * trade.RequestedPct / 100
 	maxGross := state.CashUSD / (1 + feeRate)
 	gross := math.Min(requestedNotional, maxGross)
 	if gross <= epsilon || trade.FillPrice <= epsilon {
@@ -56,6 +60,7 @@ func executeBuy(trade Trade, state *SimulationState, startingCash, feeRate float
 		return trade
 	}
 	quantity := gross / trade.FillPrice
+	state.CycleBudgetUSD = cycleBudget
 	fee := gross * feeRate
 	previousCost := state.Position.CashAllocated
 	state.CashUSD -= gross + fee
@@ -116,5 +121,5 @@ func normalizeState(state *SimulationState) {
 }
 
 func initialState(asset string, cash float64) SimulationState {
-	return SimulationState{CashUSD: cash, Position: portfolio.Asset{Symbol: asset}, StrategyState: strategy.PersistedState{Asset: asset}}
+	return SimulationState{CashUSD: cash, CycleBudgetUSD: cash, Position: portfolio.Asset{Symbol: asset}, StrategyState: strategy.PersistedState{Asset: asset}}
 }
