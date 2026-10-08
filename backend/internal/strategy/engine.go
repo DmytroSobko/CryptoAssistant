@@ -56,19 +56,21 @@ type Config struct {
 	PivotLeft         int        `json:"pivotLeft"`
 	PivotRight        int        `json:"pivotRight"`
 	BreakoutBufferPct float64    `json:"breakoutBufferPct"`
-	TrendMode         string     `json:"trendMode"`
-	Entry1Pct         float64    `json:"entry1Pct"`
-	Entry2Pct         float64    `json:"entry2Pct"`
-	Entry3Pct         float64    `json:"entry3Pct"`
-	ProfitTrigger1Pct float64    `json:"profitTrigger1Pct"`
-	ProfitTrigger2Pct float64    `json:"profitTrigger2Pct"`
-	ProfitTakePct     float64    `json:"profitTakePct"`
-	Drawdown1Pct      float64    `json:"drawdown1Pct"`
-	Drawdown1SellPct  float64    `json:"drawdown1SellPct"`
-	Drawdown2Pct      float64    `json:"drawdown2Pct"`
-	Drawdown2SellPct  float64    `json:"drawdown2SellPct"`
-	Drawdown3Pct      float64    `json:"drawdown3Pct"`
-	Drawdown3SellPct  float64    `json:"drawdown3SellPct"`
+	// Zero disables the historical-peak discount gate for normal Entry 1.
+	RecoveryEntryMinPeakDiscountPct float64 `json:"recoveryEntryMinPeakDiscountPct,omitempty"`
+	TrendMode                       string  `json:"trendMode"`
+	Entry1Pct                       float64 `json:"entry1Pct"`
+	Entry2Pct                       float64 `json:"entry2Pct"`
+	Entry3Pct                       float64 `json:"entry3Pct"`
+	ProfitTrigger1Pct               float64 `json:"profitTrigger1Pct"`
+	ProfitTrigger2Pct               float64 `json:"profitTrigger2Pct"`
+	ProfitTakePct                   float64 `json:"profitTakePct"`
+	Drawdown1Pct                    float64 `json:"drawdown1Pct"`
+	Drawdown1SellPct                float64 `json:"drawdown1SellPct"`
+	Drawdown2Pct                    float64 `json:"drawdown2Pct"`
+	Drawdown2SellPct                float64 `json:"drawdown2SellPct"`
+	Drawdown3Pct                    float64 `json:"drawdown3Pct"`
+	Drawdown3SellPct                float64 `json:"drawdown3SellPct"`
 
 	// Dip Accumulation fields are intentionally inert for Recovery Breakout.
 	// Their rules are added in Phase B; defining them now makes profiles and
@@ -283,6 +285,11 @@ func evaluateRecoveryBreakout(candles []market.Candle, position portfolio.Asset,
 	}
 
 	entryPct := config.entryPct(state.EntryStep + 1)
+	if state.EntryStep == 0 {
+		if gated, blocked := recoveryEntryPeakGate(result, config, &state); blocked {
+			return gated, state
+		}
+	}
 	if !validPositivePercentage(entryPct) {
 		return waitingResult(result, state, config, "The next entry percentage is invalid.", "Set a positive configured entry percentage."), state
 	}

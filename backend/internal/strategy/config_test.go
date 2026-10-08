@@ -13,6 +13,10 @@ func TestValidateConfig(t *testing.T) {
 		valid  bool
 	}{
 		{"valid", valid, true},
+		{"negative peak discount", func() Config { cfg := valid; cfg.RecoveryEntryMinPeakDiscountPct = -1; return cfg }(), false},
+		{"100 percent peak discount", func() Config { cfg := valid; cfg.RecoveryEntryMinPeakDiscountPct = 100; return cfg }(), false},
+		{"non-finite peak discount", func() Config { cfg := valid; cfg.RecoveryEntryMinPeakDiscountPct = math.NaN(); return cfg }(), false},
+		{"valid peak discount", func() Config { cfg := valid; cfg.RecoveryEntryMinPeakDiscountPct = 20; return cfg }(), true},
 		{"explicit recovery breakout", func() Config { cfg := valid; cfg.StrategyID = StrategyRecoveryBreakout; return cfg }(), true},
 		{"unknown strategy", func() Config { cfg := valid; cfg.StrategyID = "UNKNOWN"; return cfg }(), false},
 		{"zero pivot", func() Config { cfg := valid; cfg.PivotLeft = 0; return cfg }(), false},

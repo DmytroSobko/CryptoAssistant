@@ -60,7 +60,7 @@ func Run(request Request, candles []market.Candle) (Result, error) {
 		result.EquityCurve = append(result.EquityCurve, point)
 
 		previousStrategyState := state.StrategyState
-		if evaluationConfig.ATHEntryOverrideEnabled {
+		if evaluationConfig.ATHEntryOverrideEnabled || evaluationConfig.RecoveryEntryMinPeakDiscountPct > 0 {
 			peak, found, peakErr := ath.PeakBefore(request.Asset, candle.Timestamp)
 			if peakErr != nil {
 				return Result{}, peakErr
@@ -114,6 +114,9 @@ func assumptionsFor(request Request) Assumptions {
 		assumptions.ATHEntryOverride = fmt.Sprintf("Enabled: on a fresh cash cycle, one Entry 1 is signalled when the completed daily close is at or below %.2f%% of the highest daily high known before that day.", request.StrategyConfig.ATHEntryThresholdPct)
 	} else {
 		assumptions.ATHEntryOverride = "Historical-peak Entry 1 override disabled for this run."
+	}
+	if request.StrategyConfig.RecoveryEntryMinPeakDiscountPct > 0 {
+		assumptions.RecoveryEntryPeakGate = fmt.Sprintf("Normal recovery Entry 1 requires a completed close at least %.2f%% below the historical peak known before the signal day. The ATH override remains a separate entry route; next-open fills can differ from the qualifying close.", request.StrategyConfig.RecoveryEntryMinPeakDiscountPct)
 	}
 	return assumptions
 }

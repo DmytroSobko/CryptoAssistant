@@ -3,6 +3,7 @@ package backtest
 import (
 	"math"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -31,6 +32,38 @@ func TestRunIsDeterministicAndDoesNotMutateCandles(t *testing.T) {
 	}
 	if len(first.Signals) != len(candles)-199 {
 		t.Fatalf("signals = %d, want %d", len(first.Signals), len(candles)-199)
+	}
+}
+
+func TestRunSuppliesHistoricalPeakForRecoveryGateWithoutOverride(t *testing.T) {
+	candles := entryFixture()
+	request := fixtureRequest(candles, 199, len(candles)-1)
+	request.StrategyConfig.RecoveryEntryMinPeakDiscountPct = 99.9
+	request.StrategyConfig.ATHEntryOverrideEnabled = false
+	result, err := Run(request, candles)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Trades) != 0 || result.Assumptions.RecoveryEntryPeakGate == "" {
+		t.Fatalf("enabled gate did not block or disclose its ceiling: %+v", result)
+	}
+	found := false
+	for _, signal := range result.Signals {
+		if strings.Contains(signal.Reason, "Recovery Entry 1 withheld") {
+			found = true
+		}
+		if strings.Contains(signal.Reason, "waiting for a known prior historical peak") {
+			t.Fatal("peak was not supplied when ATH override was disabled")
+		}
+	}
+	if !found {
+		t.Fatal("expected a recovery breakout withheld by the historical-peak ceiling")
+	}
+	// A future high outside the requested range must not alter any decision.
+	withFuture := append(append([]market.Candle(nil), candles...), candleAt(len(candles), 1e8))
+	futureResult, err := Run(request, withFuture)
+	if err != nil || !reflect.DeepEqual(result.Signals, futureResult.Signals) {
+		t.Fatalf("future peak changed past entry decisions: err=%v", err)
 	}
 }
 

@@ -113,6 +113,14 @@ independently, while only the selected one generates future advisories.
 Changing strategy starts a fresh advisory-state cycle for that asset and does
 not change the other asset or execute a trade.
 
+Each strategy's **Entry 1 minimum below historical peak (%)** adds a price
+ceiling to its normal recovery entry. For example, 20% and a prior historical
+peak of $70,000 require a completed signal close at or below $56,000, together
+with the normal pullback, higher-low, breakout, and trend conditions. Zero
+disables this additional gate. It is checked again at entry time even if the
+correction qualified earlier. The historical-peak override remains a separate
+entry route, and the next-open simulated fill can exceed the signal ceiling.
+
 Dip Accumulation uses the normal recovery/trend gate for Entry 1. Entries 2
 and 3 then occur at configured dips below the fixed first-entry reference
 (defaults: 5% and 10%). It must first reach its configured profit target;

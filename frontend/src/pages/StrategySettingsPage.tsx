@@ -4,6 +4,7 @@ import type { AssetStrategySettings, AssetSymbol, StrategyConfig, StrategyID } f
 
 type NumericField =
   | "pullbackMinPct" | "pivotLeft" | "pivotRight" | "breakoutBufferPct"
+  | "recoveryEntryMinPeakDiscountPct"
   | "entry1Pct" | "entry2Pct" | "entry3Pct"
   | "profitTrigger1Pct" | "profitTrigger2Pct" | "profitTakePct"
   | "drawdown1Pct" | "drawdown1SellPct" | "drawdown2Pct" | "drawdown2SellPct" | "drawdown3Pct" | "drawdown3SellPct"
@@ -30,6 +31,7 @@ interface FieldDefinition {
 
 const initialEntryFields: FieldDefinition[] = [
   { field: "pullbackMinPct", label: "Minimum pullback (%)", min: 0 },
+  { field: "recoveryEntryMinPeakDiscountPct", label: "Entry 1 minimum below historical peak (%)", min: 0 },
   { field: "pivotLeft", label: "Pivot candles left", min: 1, step: 1 },
   { field: "pivotRight", label: "Pivot candles right", min: 1, step: 1 },
   { field: "breakoutBufferPct", label: "Breakout buffer (%)", min: 0 },
@@ -67,6 +69,7 @@ function selectedConfigKey(strategyId: StrategyID): "recoveryBreakout" | "dipAcc
 function formFromConfig(config: StrategyConfig): ConfigForm {
   return {
     pullbackMinPct: String(config.pullbackMinPct), pivotLeft: String(config.pivotLeft), pivotRight: String(config.pivotRight),
+    recoveryEntryMinPeakDiscountPct: String(config.recoveryEntryMinPeakDiscountPct ?? 0),
     breakoutBufferPct: String(config.breakoutBufferPct), trendMode: config.trendMode,
     entry1Pct: String(config.entry1Pct), entry2Pct: String(config.entry2Pct), entry3Pct: String(config.entry3Pct),
     profitTrigger1Pct: String(config.profitTrigger1Pct), profitTrigger2Pct: String(config.profitTrigger2Pct), profitTakePct: String(config.profitTakePct),
@@ -97,6 +100,7 @@ function configFromForm(form: ConfigForm, strategyId: StrategyID): StrategyConfi
   const config: StrategyConfig = {
     strategyId,
     pullbackMinPct: numberValue(form.pullbackMinPct, "Minimum pullback"),
+    recoveryEntryMinPeakDiscountPct: numberValue(form.recoveryEntryMinPeakDiscountPct, "Entry 1 minimum below historical peak"),
     pivotLeft: numberValue(form.pivotLeft, "Pivot candles left"),
     pivotRight: numberValue(form.pivotRight, "Pivot candles right"),
     breakoutBufferPct: numberValue(form.breakoutBufferPct, "Breakout buffer"),
@@ -108,6 +112,7 @@ function configFromForm(form: ConfigForm, strategyId: StrategyID): StrategyConfi
     drawdown3Pct: numberValue(form.drawdown3Pct, "Drawdown 3"), drawdown3SellPct: numberValue(form.drawdown3SellPct, "Drawdown 3 sell"),
   };
   const positivePercentages = [config.pullbackMinPct, config.entry1Pct, config.entry2Pct, config.entry3Pct, config.profitTrigger1Pct, config.profitTakePct, config.drawdown1SellPct, config.drawdown2SellPct, config.drawdown3SellPct];
+  if (config.recoveryEntryMinPeakDiscountPct! < 0 || config.recoveryEntryMinPeakDiscountPct! >= 100) throw new Error("Entry 1 minimum below historical peak must be at least 0 and below 100%.");
   if (positivePercentages.some((value) => value <= 0 || value > 100)) throw new Error("Positive percentage values must be greater than 0 and at most 100.");
   if (!Number.isInteger(config.pivotLeft) || !Number.isInteger(config.pivotRight) || config.pivotLeft < 1 || config.pivotRight < 1) throw new Error("Pivot windows must both be whole numbers of at least 1.");
   if (config.breakoutBufferPct < 0 || config.breakoutBufferPct > 100) throw new Error("Breakout buffer must be between 0 and 100.");
@@ -138,7 +143,7 @@ function settingsFromForm(form: ProfileForm): AssetStrategySettings {
 }
 
 function NumberFields({ fields, form, onChange }: { fields: FieldDefinition[]; form: ConfigForm; onChange: (field: NumericField, value: string) => void }) {
-  return <div className="settings-fields">{fields.map(({ field, label, min, step }) => <label className="field" key={field}><span>{label}</span><input aria-label={label} inputMode="decimal" min={min} onChange={(event) => onChange(field, event.target.value)} step={step ?? "any"} type="number" value={form[field]} /></label>)}</div>;
+  return <div className="settings-fields">{fields.map(({ field, label, min, step }) => <label className="field" key={field}><span>{label}</span><input aria-label={label} inputMode="decimal" min={min} onChange={(event) => onChange(field, event.target.value)} step={step ?? "any"} type="number" value={form[field]} />{field === "recoveryEntryMinPeakDiscountPct" && <small>0 disables this gate. Normal Entry 1 must close at or below peak × (1 − discount / 100), with recovery confirmed. The historical-peak override is a separate entry route.</small>}</label>)}</div>;
 }
 
 export function StrategySettingsPage() {

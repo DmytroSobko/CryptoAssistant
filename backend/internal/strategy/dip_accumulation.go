@@ -168,6 +168,9 @@ func dipFirstEntry(result Result, candles []market.Candle, config Config, state 
 	}
 
 	entryPct := config.entryPct(1)
+	if gated, blocked := recoveryEntryPeakGate(result, config, &state); blocked {
+		return gated, state
+	}
 	if !validPositivePercentage(entryPct) {
 		return waitingResult(result, state, config, "The first entry percentage is invalid.", "Set a positive configured first entry percentage."), state
 	}

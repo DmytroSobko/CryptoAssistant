@@ -215,6 +215,7 @@ func TestPerAssetStrategyProfilesKeepConfigurationsAndStatesIndependent(t *testi
 	profile.SelectedStrategyID = strategy.StrategyDipAccumulation
 	profile.DipAccumulation.Entry1Pct = 35
 	profile.DipAccumulation.Entry3Pct = 35
+	profile.DipAccumulation.RecoveryEntryMinPeakDiscountPct = 20
 	profile.ATHEntryOverride = strategy.ATHEntryOverrideSettings{Enabled: true, ThresholdPct: 55}
 	if err := store.SaveAssetStrategySettings(context.Background(), "BTC", profile); err != nil {
 		t.Fatal(err)
@@ -224,7 +225,7 @@ func TestPerAssetStrategyProfilesKeepConfigurationsAndStatesIndependent(t *testi
 		t.Fatalf("active Dip Accumulation config=%+v err=%v", active, err)
 	}
 	storedProfile, err := store.GetAssetStrategySettings(context.Background(), "BTC")
-	if err != nil || !storedProfile.ATHEntryOverride.Enabled || storedProfile.ATHEntryOverride.ThresholdPct != 55 {
+	if err != nil || !storedProfile.ATHEntryOverride.Enabled || storedProfile.ATHEntryOverride.ThresholdPct != 55 || storedProfile.DipAccumulation.RecoveryEntryMinPeakDiscountPct != 20 {
 		t.Fatalf("stored BTC ATH entry override=%+v err=%v", storedProfile.ATHEntryOverride, err)
 	}
 	ethProfile, err := store.GetAssetStrategySettings(context.Background(), "ETH")

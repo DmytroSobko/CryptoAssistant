@@ -59,6 +59,7 @@ export interface StrategyEvent {
 export interface StrategyConfig {
   strategyId?: StrategyID;
   pullbackMinPct: number;
+  recoveryEntryMinPeakDiscountPct?: number;
   pivotLeft: number;
   pivotRight: number;
   breakoutBufferPct: number;
@@ -132,6 +133,7 @@ export interface BacktestRunInput {
 }
 
 export interface BacktestAssumptions {
+  recoveryEntryPeakGate?: string;
   executionModel: BacktestExecutionModel;
   signalTiming: string;
   fillTiming: string;

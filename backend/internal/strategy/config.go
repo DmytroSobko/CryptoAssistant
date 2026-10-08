@@ -27,6 +27,9 @@ func ValidateConfig(config Config) error {
 // validation. Keeping it separate guards the MVP configuration semantics as
 // more strategy-specific fields are introduced.
 func validateSharedConfig(config Config) error {
+	if isNaNOrInf(config.RecoveryEntryMinPeakDiscountPct) || config.RecoveryEntryMinPeakDiscountPct < 0 || config.RecoveryEntryMinPeakDiscountPct >= 100 {
+		return fmt.Errorf("recovery Entry 1 minimum peak discount must be at least 0 and below 100")
+	}
 	if !validPositivePercentage(config.PullbackMinPct) {
 		return fmt.Errorf("pullback minimum must be greater than 0 and at most 100")
 	}

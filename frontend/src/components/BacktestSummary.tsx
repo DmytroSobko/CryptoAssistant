@@ -26,6 +26,7 @@ export function BacktestSummary({ asset, result }: { asset: AssetSymbol; result:
         <span>{assumptions.executionModel.replaceAll("_", " ")} · fees {assumptions.feeBps} bps · slippage {assumptions.slippageBps} bps</span>
         <span>Strategy: {strategyName} · {result.request.strategyConfig.trendMode} · entries {result.request.strategyConfig.entry1Pct}/{result.request.strategyConfig.entry2Pct}/{result.request.strategyConfig.entry3Pct}%</span>
         {assumptions.athEntryOverride && <span>{assumptions.athEntryOverride}</span>}
+        {assumptions.recoveryEntryPeakGate && <span>{assumptions.recoveryEntryPeakGate}</span>}
         <span>Taxes excluded · {summary.rejectedTradeCount} rejected · {summary.unexecutedTradeCount} unexecuted</span>
         {isDipAccumulation && <><span>{assumptions.referencePricePolicy}</span><span>{assumptions.breakEvenExitFloor}</span></>}
       </div>

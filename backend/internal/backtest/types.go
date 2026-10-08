@@ -38,6 +38,7 @@ type Assumptions struct {
 	ReferencePricePolicy         string         `json:"referencePricePolicy"`
 	BreakEvenExitFloor           string         `json:"breakEvenExitFloor"`
 	ATHEntryOverride             string         `json:"athEntryOverride"`
+	RecoveryEntryPeakGate        string         `json:"recoveryEntryPeakGate,omitempty"`
 }
 
 type SimulationState struct {
