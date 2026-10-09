@@ -100,6 +100,18 @@ func TestDipAccumulationDefersDrawdownUntilProfitMilestone(t *testing.T) {
 	}
 }
 
+func TestDipAccumulationIntradayDrawdownAlertDoesNotConsumeSellStage(t *testing.T) {
+	config := dipAccumulationConfig()
+	config.IntradayDrawdownAlertsEnabled = true
+	state := PersistedState{Asset: "BTC", CurrentState: StateProfitProtection, EntryStep: 3, FirstEntryReferencePrice: 100, HighestPrice: 120, PositionOpen: true, ProfitTaken: true}
+	position := portfolio.Asset{Symbol: "BTC", Quantity: 1, AverageEntryPrice: 100}
+
+	result, next := EvaluateWithIntradayPrice(candleFixture([]float64{100, 115}), position, config, state, 107)
+	if result.Action != ActionSellDrawdown || !result.IntradayAlert || result.Price != 107 || next.Drawdown1Triggered || next.Drawdown2Triggered || next.Drawdown3Triggered {
+		t.Fatalf("intraday alert result=%+v state=%+v; want a non-consuming first drawdown alert", result, next)
+	}
+}
+
 func TestDipAccumulationBreakEvenFloorBlocksBelowCostDrawdownExit(t *testing.T) {
 	config := dipAccumulationConfig()
 	state := PersistedState{Asset: "BTC", CurrentState: StateFullPosition, EntryStep: 3, FirstEntryReferencePrice: 100, HighestPrice: 120, PositionOpen: true, ProfitTaken: true}

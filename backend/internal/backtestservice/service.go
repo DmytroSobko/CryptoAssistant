@@ -19,6 +19,7 @@ import (
 var (
 	ErrNotFound = errors.New("backtest resource not found")
 	ErrInvalid  = errors.New("invalid backtest input")
+	ErrConflict = errors.New("backtest resource conflict")
 )
 
 type ImportRequest struct {
@@ -75,6 +76,24 @@ func (s *Service) ListCandleSets(ctx context.Context, asset string) ([]storage.B
 		return nil, err
 	}
 	return sets, nil
+}
+
+func (s *Service) DeleteCandleSet(ctx context.Context, id string) error {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return fmt.Errorf("backtest candle set: %w", ErrNotFound)
+	}
+	deleted, err := s.store.DeleteBacktestCandleSet(ctx, id)
+	if errors.Is(err, storage.ErrBacktestCandleSetInUse) {
+		return fmt.Errorf("%w: delete saved runs that use this candle set first", ErrConflict)
+	}
+	if err != nil {
+		return err
+	}
+	if !deleted {
+		return fmt.Errorf("backtest candle set %q: %w", id, ErrNotFound)
+	}
+	return nil
 }
 
 func (s *Service) Run(ctx context.Context, request RunRequest) (storage.BacktestRun, error) {
@@ -138,6 +157,10 @@ func (s *Service) DeleteRun(ctx context.Context, id string) error {
 		return fmt.Errorf("backtest run %q: %w", id, ErrNotFound)
 	}
 	return nil
+}
+
+func (s *Service) DeleteAllRuns(ctx context.Context) (int64, error) {
+	return s.store.DeleteAllBacktestRuns(ctx)
 }
 
 func (s *Service) ListRuns(ctx context.Context, limit int) ([]storage.BacktestRunSummary, error) {

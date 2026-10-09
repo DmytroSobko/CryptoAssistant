@@ -75,10 +75,11 @@ type Config struct {
 	// Dip Accumulation fields are intentionally inert for Recovery Breakout.
 	// Their rules are added in Phase B; defining them now makes profiles and
 	// persisted snapshots forward-compatible without changing the legacy path.
-	Entry2DipFromFirstPct     float64 `json:"entry2DipFromFirstPct,omitempty"`
-	Entry3DipFromFirstPct     float64 `json:"entry3DipFromFirstPct,omitempty"`
-	EstimatedSellFeeBps       float64 `json:"estimatedSellFeeBps,omitempty"`
-	BreakEvenExitFloorEnabled bool    `json:"breakEvenExitFloorEnabled,omitempty"`
+	Entry2DipFromFirstPct         float64 `json:"entry2DipFromFirstPct,omitempty"`
+	Entry3DipFromFirstPct         float64 `json:"entry3DipFromFirstPct,omitempty"`
+	EstimatedSellFeeBps           float64 `json:"estimatedSellFeeBps,omitempty"`
+	BreakEvenExitFloorEnabled     bool    `json:"breakEvenExitFloorEnabled,omitempty"`
+	IntradayDrawdownAlertsEnabled bool    `json:"intradayDrawdownAlertsEnabled,omitempty"`
 
 	// ATH entry fields are injected from the per-asset global override for live
 	// evaluations, or copied into an isolated backtest request. They apply to
@@ -86,6 +87,8 @@ type Config struct {
 	ATHEntryOverrideEnabled bool    `json:"athEntryOverrideEnabled,omitempty"`
 	ATHEntryThresholdPct    float64 `json:"athEntryThresholdPct,omitempty"`
 	ATHReferencePeak        float64 `json:"athReferencePeak,omitempty"`
+	ATHPeakCount            int     `json:"athPeakCount,omitempty"`
+	ATHSourceFile           string  `json:"athSourceFile,omitempty"`
 }
 
 // PersistedState contains only facts needed to make a subsequent evaluation
@@ -139,8 +142,15 @@ type Result struct {
 	// average entry price and is zero for the legacy strategy.
 	BreakEvenFloorNetPrice   float64 `json:"breakEvenFloorNetPrice,omitempty"`
 	BreakEvenFloorGrossPrice float64 `json:"breakEvenFloorGrossPrice,omitempty"`
-	Reason                   string  `json:"reason"`
-	NextCondition            string  `json:"nextCondition"`
+	IntradayAlert            bool    `json:"intradayAlert,omitempty"`
+	RecommendationID         int64   `json:"recommendationId,omitempty"`
+	RecommendationStatus     string  `json:"recommendationStatus,omitempty"`
+	HistoricalPeakAverage    float64 `json:"historicalPeakAverage,omitempty"`
+	// RecommendationRuleFingerprint is storage-only metadata used to prevent a
+	// pending entry created under superseded settings from being shown again.
+	RecommendationRuleFingerprint string `json:"-"`
+	Reason                        string `json:"reason"`
+	NextCondition                 string `json:"nextCondition"`
 }
 
 // Engine is a small seam for callers that prefer dependency injection.
@@ -152,23 +162,31 @@ type Engine interface {
 // never mutates a portfolio: returned actions are recommendations, while the
 // caller is responsible for persisting both the portfolio and next state.
 func Evaluate(candles []market.Candle, position portfolio.Asset, config Config, previous PersistedState) (Result, PersistedState) {
+	return EvaluateWithIntradayPrice(candles, position, config, previous, 0)
+}
+
+// EvaluateWithIntradayPrice uses an optional observed quote only for the
+// opt-in drawdown alert; all entry and durable state decisions remain daily.
+func EvaluateWithIntradayPrice(candles []market.Candle, position portfolio.Asset, config Config, previous PersistedState, intradayPrice float64) (Result, PersistedState) {
 	strategyID := config.ResolvedStrategyID()
 	previous.StrategyID = strategyID
 	if result, next, ok := athEntryOverride(candles, position, config, previous); ok {
 		result.StrategyID = strategyID
+		result.HistoricalPeakAverage = config.ATHReferencePeak
 		return result, next
 	}
 	var result Result
 	var next PersistedState
 	switch strategyID {
 	case StrategyRecoveryBreakout:
-		result, next = evaluateRecoveryBreakout(candles, position, config, previous)
+		result, next = evaluateRecoveryBreakout(candles, position, config, previous, intradayPrice)
 	case StrategyDipAccumulation:
-		result, next = evaluateDipAccumulation(candles, position, config, previous)
+		result, next = evaluateDipAccumulation(candles, position, config, previous, intradayPrice)
 	default:
 		result, next = unsupportedStrategyResult(candles, position, config, previous)
 	}
 	result.StrategyID = strategyID
+	result.HistoricalPeakAverage = config.ATHReferencePeak
 	return result, next
 }
 
@@ -179,7 +197,11 @@ func Evaluate(candles []market.Candle, position portfolio.Asset, config Config, 
 // A staged entry consumes one distinct confirmed recovery breakout. This is
 // deliberately stricter than treating every later close above the same level
 // as a new entry; the latter would create duplicate daily recommendations.
-func evaluateRecoveryBreakout(candles []market.Candle, position portfolio.Asset, config Config, previous PersistedState) (Result, PersistedState) {
+func evaluateRecoveryBreakout(candles []market.Candle, position portfolio.Asset, config Config, previous PersistedState, intradayPrices ...float64) (Result, PersistedState) {
+	intradayPrice := 0.0
+	if len(intradayPrices) > 0 {
+		intradayPrice = intradayPrices[0]
+	}
 	state := previous
 	state.Asset = assetFor(position, state)
 	if state.CurrentState == "" {
@@ -210,6 +232,16 @@ func evaluateRecoveryBreakout(candles []market.Candle, position portfolio.Asset,
 		}
 		state.DrawdownPct = percentChange(state.HighestPrice, price)
 		result.DrawdownFromHighPct = state.DrawdownPct
+		if config.IntradayDrawdownAlertsEnabled && finitePositive(intradayPrice) {
+			intradayDrawdown := percentChange(state.HighestPrice, intradayPrice)
+			if sellPct, _, triggered := drawdownAction(config, intradayDrawdown, state); triggered {
+				result.Price, result.IntradayAlert, result.DrawdownFromHighPct = intradayPrice, true, intradayDrawdown
+				state.CurrentState = StateExiting
+				return actionResult(result, state, config, ActionSellDrawdown, sellPct,
+					fmt.Sprintf("Intraday alert: observed price %.2f is %.2f%% below the %.2f completed-daily high-water mark. The sell stage remains pending until you update the position.", intradayPrice, -intradayDrawdown, state.HighestPrice),
+					"Sell manually, then update the portfolio. This alert remains active until the position or daily state changes."), state
+			}
+		}
 
 		if sellPct, level, triggered := drawdownAction(config, state.DrawdownPct, state); triggered {
 			state = markDrawdownTriggered(state, level)

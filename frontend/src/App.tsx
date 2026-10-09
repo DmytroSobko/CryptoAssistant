@@ -82,6 +82,9 @@ export default function App() {
     // user closing a position), so refresh the entire advisory snapshot.
     void refreshDashboard();
   }
+  function handleResolveRecommendation(id: number, status: "EXECUTED" | "DISMISSED") {
+    void api.resolveRecommendation(id, status).then(() => refreshDashboard());
+  }
 
   return (
     <main className="app-shell">
@@ -93,7 +96,7 @@ export default function App() {
         <p className={connectionError ? "connection connection--error" : "connection"}>{connectionError ? `Data unavailable: ${connectionError}` : "Local API connected"}</p>
       </aside>
       <section className="content">
-        {page === "dashboard" && <DashboardPage isLoading={isDashboardLoading} lastRefreshedAt={lastDashboardRefresh} market={market} onRefresh={refreshDashboard} portfolio={portfolio} strategy={strategy} />}
+        {page === "dashboard" && <DashboardPage isLoading={isDashboardLoading} lastRefreshedAt={lastDashboardRefresh} market={market} onRefresh={refreshDashboard} onResolveRecommendation={handleResolveRecommendation} portfolio={portfolio} strategy={strategy} />}
         {page === "portfolio" && <PortfolioPage isLoading={isDashboardLoading} onSaved={handlePortfolioSaved} portfolio={portfolio} />}
         {page === "history" && <HistoryPage />}
         {page === "settings" && <StrategySettingsPage />}

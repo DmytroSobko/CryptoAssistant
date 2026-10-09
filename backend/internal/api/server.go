@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -46,15 +47,19 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /api/portfolio", s.handleGetPortfolio)
 	mux.HandleFunc("PUT /api/portfolio", s.handlePutPortfolio)
 	mux.HandleFunc("GET /api/history", s.handleHistory)
+	mux.HandleFunc("POST /api/recommendations/{id}/resolve", s.handleResolveRecommendation)
 	mux.HandleFunc("GET /api/config", s.handleGetConfig)
 	mux.HandleFunc("PUT /api/config/{asset}", s.handlePutConfig)
 	mux.HandleFunc("GET /api/strategy-settings", s.handleGetStrategySettings)
 	mux.HandleFunc("PUT /api/strategy-settings/{asset}", s.handlePutStrategySettings)
+	mux.HandleFunc("POST /api/historical-peak-sources", s.handleUploadHistoricalPeakSource)
 	mux.HandleFunc("POST /api/backtest/candle-sets", s.handleImportBacktestCandleSet)
 	mux.HandleFunc("GET /api/backtest/candle-sets", s.handleListBacktestCandleSets)
+	mux.HandleFunc("DELETE /api/backtest/candle-sets/{id}", s.handleDeleteBacktestCandleSet)
 	mux.HandleFunc("POST /api/backtests", s.handleCreateBacktest)
 	mux.HandleFunc("POST /api/backtests/preview", s.handlePreviewBacktest)
 	mux.HandleFunc("GET /api/backtests", s.handleListBacktests)
+	mux.HandleFunc("DELETE /api/backtests", s.handleDeleteAllBacktests)
 	mux.HandleFunc("GET /api/backtests/{id}", s.handleGetBacktest)
 	mux.HandleFunc("DELETE /api/backtests/{id}", s.handleDeleteBacktest)
 	return withCORS(withLogging(mux))
@@ -107,6 +112,30 @@ func (s *Server) handleStrategy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) handleResolveRecommendation(w http.ResponseWriter, r *http.Request) {
+	if s.store == nil {
+		writeError(w, http.StatusServiceUnavailable, "storage is unavailable")
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id < 1 {
+		writeError(w, http.StatusBadRequest, "recommendation ID must be positive")
+		return
+	}
+	var input struct {
+		Status string `json:"status"`
+	}
+	if err := decodeJSON(r, &input); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := s.store.ResolveStrategyRecommendation(r.Context(), id, strings.ToUpper(input.Status)); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleGetPortfolio(w http.ResponseWriter, r *http.Request) {

@@ -11,7 +11,11 @@ import (
 // evaluateDipAccumulation uses the same confirmed recovery-breakout gate as
 // Recovery Breakout for Entry 1. Later entries deliberately use fixed dips
 // from that first-entry reference rather than requiring more breakouts.
-func evaluateDipAccumulation(candles []market.Candle, position portfolio.Asset, config Config, previous PersistedState) (Result, PersistedState) {
+func evaluateDipAccumulation(candles []market.Candle, position portfolio.Asset, config Config, previous PersistedState, intradayPrices ...float64) (Result, PersistedState) {
+	intradayPrice := 0.0
+	if len(intradayPrices) > 0 {
+		intradayPrice = intradayPrices[0]
+	}
 	state := previous
 	state.Asset = assetFor(position, state)
 	if state.CurrentState == "" {
@@ -53,6 +57,20 @@ func evaluateDipAccumulation(candles []market.Candle, position portfolio.Asset, 
 			return actionResult(result, state, config, ActionSellProfit, config.ProfitTakePct,
 				fmt.Sprintf("P/L is %.2f%%, at or above the configured %.2f%% profit trigger. Unused entry stages are cancelled for this position cycle.", result.ProfitLossPct, config.ProfitTrigger1Pct),
 				"Hold the remaining position and watch completed-candle drawdown exits; no further buys until this position closes."), state
+		}
+
+		if state.ProfitTaken && config.IntradayDrawdownAlertsEnabled && finitePositive(intradayPrice) {
+			intradayDrawdown := percentChange(state.HighestPrice, intradayPrice)
+			if sellPct, _, triggered := drawdownAction(config, intradayDrawdown, state); triggered {
+				floorNet, floorGross := dipBreakEvenFloor(config, position.AverageEntryPrice)
+				result.Price, result.IntradayAlert, result.DrawdownFromHighPct = intradayPrice, true, intradayDrawdown
+				result.BreakEvenFloorNetPrice, result.BreakEvenFloorGrossPrice = floorNet, floorGross
+				state.CurrentState = StateProfitProtection
+				if floorNet > 0 && intradayPrice*(1-config.EstimatedSellFeeBps/10000) < floorNet {
+					return holdResult(result, state, config, fmt.Sprintf("Intraday drawdown exit withheld: observed price %.2f is below the estimated break-even sale floor of %.2f.", intradayPrice, floorGross), fmt.Sprintf("Hold until an observed price supports a sale at or above %.2f before fees.", floorGross)), state
+				}
+				return actionResult(result, state, config, ActionSellDrawdown, sellPct, fmt.Sprintf("Intraday alert: observed price %.2f is %.2f%% below the %.2f completed-daily high-water mark. The sell stage remains pending until you update the position.", intradayPrice, -intradayDrawdown, state.HighestPrice), "Sell manually, then update the portfolio. This alert remains active until the position or daily state changes."), state
+			}
 		}
 
 		// Before the profit milestone, continue the configured accumulation.

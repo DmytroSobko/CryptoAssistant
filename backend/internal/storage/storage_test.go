@@ -257,6 +257,46 @@ func TestPerAssetStrategyProfilesKeepConfigurationsAndStatesIndependent(t *testi
 	}
 }
 
+func TestSwitchingStrategyCarriesOpenCampaignExitMilestones(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "assistant.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if err := store.Migrate("../../migrations"); err != nil {
+		t.Fatal(err)
+	}
+
+	profile, err := store.GetAssetStrategySettings(context.Background(), "BTC")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveStrategyState(context.Background(), strategy.PersistedState{
+		Asset: "BTC", StrategyID: strategy.StrategyRecoveryBreakout, CurrentState: strategy.StateProfitProtection,
+		PositionOpen: true, ProfitTaken: true, Drawdown1Triggered: true, HighestPrice: 120, DrawdownPct: -5,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SaveStrategyState(context.Background(), strategy.PersistedState{
+		Asset: "BTC", StrategyID: strategy.StrategyDipAccumulation, CurrentState: strategy.StatePartialPosition,
+		PositionOpen: true, EntryStep: 1, FirstEntryReferencePrice: 100, HighestPrice: 125, DrawdownPct: -3,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	profile.SelectedStrategyID = strategy.StrategyDipAccumulation
+	if err := store.SaveAssetStrategySettings(context.Background(), "BTC", profile); err != nil {
+		t.Fatal(err)
+	}
+	carried, err := store.GetStrategyState(context.Background(), "BTC")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if carried.StrategyID != strategy.StrategyDipAccumulation || !carried.PositionOpen || !carried.ProfitTaken || !carried.Drawdown1Triggered || carried.Drawdown2Triggered || carried.HighestPrice != 120 || carried.DrawdownPct != -5 || carried.EntryStep != 0 || carried.FirstEntryReferencePrice != 0 || carried.CurrentState != strategy.StateProfitProtection {
+		t.Fatalf("open campaign exit state was not carried: %+v", carried)
+	}
+}
+
 func TestStrategyStorageRejectsInvalidState(t *testing.T) {
 	store, err := Open(filepath.Join(t.TempDir(), "assistant.db"))
 	if err != nil {

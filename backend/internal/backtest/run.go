@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/dmytrosobko/crypto-strategy-assistant/backend/internal/ath"
 	"github.com/dmytrosobko/crypto-strategy-assistant/backend/internal/market"
@@ -29,6 +30,12 @@ func Run(request Request, candles []market.Candle) (Result, error) {
 	result := Result{Request: request, Assumptions: assumptionsFor(request), DataFingerprint: fingerprint(request, candles[startIndex:endIndex+1])}
 	state := initialState(request.Asset, request.StartingCashUSD)
 	evaluationConfig := request.StrategyConfig
+	if evaluationConfig.ATHPeakCount == 0 {
+		evaluationConfig.ATHPeakCount = 3
+	}
+	if evaluationConfig.ATHSourceFile == "" {
+		evaluationConfig.ATHSourceFile = fmt.Sprintf(".backtestdata/%s-usd-daily-10y-2016-09-30-to-2026-10-07.csv", strings.ToLower(request.Asset))
+	}
 	// Backtests know the fee assumption used at execution. Use it for the
 	// strategy's close-time break-even estimate as well; the next-open order is
 	// still conditionally rejected if its actual fill falls below the floor.
@@ -61,19 +68,18 @@ func Run(request Request, candles []market.Candle) (Result, error) {
 
 		previousStrategyState := state.StrategyState
 		if evaluationConfig.ATHEntryOverrideEnabled || evaluationConfig.RecoveryEntryMinPeakDiscountPct > 0 {
-			peak, found, peakErr := ath.PeakBefore(request.Asset, candle.Timestamp)
+			peak, selected, peakErr := ath.AverageSpacedPeaksBefore(evaluationConfig.ATHSourceFile, candle.Timestamp, evaluationConfig.ATHPeakCount)
 			if peakErr != nil {
 				return Result{}, peakErr
 			}
-			for _, prior := range candles[:index] {
-				if prior.High > peak {
-					peak, found = prior.High, true
-				}
-			}
-			if found {
+			if selected > 0 {
 				evaluationConfig.ATHReferencePeak = peak
 			} else {
-				evaluationConfig.ATHReferencePeak = 0
+				for _, prior := range candles[:index] {
+					if prior.High > evaluationConfig.ATHReferencePeak {
+						evaluationConfig.ATHReferencePeak = prior.High
+					}
+				}
 			}
 		}
 		decision, nextState := strategy.Evaluate(candles[:index+1], state.Position, evaluationConfig, previousStrategyState)

@@ -41,6 +41,10 @@ export interface StrategyResult {
   drawdownFromHighPct: number;
   breakEvenFloorNetPrice?: number;
   breakEvenFloorGrossPrice?: number;
+  intradayAlert?: boolean;
+  recommendationId?: number;
+  recommendationStatus?: string;
+  historicalPeakAverage?: number;
   reason: string;
   nextCondition: string;
 }
@@ -80,15 +84,20 @@ export interface StrategyConfig {
   entry3DipFromFirstPct?: number;
   estimatedSellFeeBps?: number;
   breakEvenExitFloorEnabled?: boolean;
+  intradayDrawdownAlertsEnabled?: boolean;
   // Copied from the asset-level setting for a live evaluation or backtest run.
   athEntryOverrideEnabled?: boolean;
   athEntryThresholdPct?: number;
   athReferencePeak?: number;
+  athPeakCount?: number;
+  athSourceFile?: string;
 }
 
 export interface ATHEntryOverrideSettings {
   enabled: boolean;
   thresholdPct: number;
+  sourceFile?: string;
+  peakCount?: number;
 }
 
 export interface AssetStrategySettings {
@@ -118,6 +127,10 @@ export interface BacktestImportInput {
   sourceLabel: string;
   sourceFilename: string;
   csv: string;
+}
+
+export interface HistoricalPeakSourceUpload {
+  sourceFile: string;
 }
 
 export interface BacktestRunInput {

@@ -21,6 +21,6 @@ func New(store *storage.Store) *Service {
 // position, configuration, and state; then it atomically persists the result.
 func (s *Service) Evaluate(ctx context.Context, asset string) (strategy.Result, error) {
 	return s.store.EvaluateStrategyAtomically(ctx, asset, func(input storage.StrategyEvaluationInput) (strategy.Result, strategy.PersistedState) {
-		return strategy.Evaluate(input.Candles, input.Position, input.Config, input.State)
+		return strategy.EvaluateWithIntradayPrice(input.Candles, input.Position, input.Config, input.State, input.IntradayPrice)
 	})
 }

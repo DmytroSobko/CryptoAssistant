@@ -6,7 +6,7 @@ import { BacktestTradeTable } from "../components/BacktestTradeTable";
 import type { AssetStrategySettings, AssetSymbol, BacktestCandleSet, BacktestResult, BacktestRunInput, BacktestRunSummary, StrategyConfig, StrategyID } from "../types/api";
 
 const assets: AssetSymbol[] = ["BTC", "ETH"];
-type SharedNumericField = Exclude<keyof StrategyConfig, "trendMode" | "strategyId" | "entry2DipFromFirstPct" | "entry3DipFromFirstPct" | "estimatedSellFeeBps" | "breakEvenExitFloorEnabled" | "athEntryOverrideEnabled" | "athEntryThresholdPct" | "athReferencePeak">;
+type SharedNumericField = Exclude<keyof StrategyConfig, "trendMode" | "strategyId" | "entry2DipFromFirstPct" | "entry3DipFromFirstPct" | "estimatedSellFeeBps" | "breakEvenExitFloorEnabled" | "intradayDrawdownAlertsEnabled" | "athEntryOverrideEnabled" | "athEntryThresholdPct" | "athReferencePeak" | "athPeakCount" | "athSourceFile">;
 type DipNumericField = "entry2DipFromFirstPct" | "entry3DipFromFirstPct";
 type EditableNumericField = SharedNumericField | DipNumericField;
 
@@ -29,7 +29,7 @@ function strategyID(config: StrategyConfig): StrategyID { return config.strategy
 function strategyName(id: StrategyID | undefined): string { return id === "DIP_ACCUMULATION" ? "Dip Accumulation" : "Recovery Breakout"; }
 function configForStrategy(settings: AssetStrategySettings, id: StrategyID): StrategyConfig {
   const base = id === "DIP_ACCUMULATION" ? settings.dipAccumulation : settings.recoveryBreakout;
-  return { ...base, recoveryEntryMinPeakDiscountPct: base.recoveryEntryMinPeakDiscountPct ?? 0, athEntryOverrideEnabled: settings.athEntryOverride?.enabled ?? false, athEntryThresholdPct: settings.athEntryOverride?.thresholdPct ?? 60 };
+  return { ...base, recoveryEntryMinPeakDiscountPct: base.recoveryEntryMinPeakDiscountPct ?? 0, athEntryOverrideEnabled: settings.athEntryOverride?.enabled ?? false, athEntryThresholdPct: settings.athEntryOverride?.thresholdPct ?? 60, athPeakCount: settings.athEntryOverride?.peakCount ?? 3, athSourceFile: settings.athEntryOverride?.sourceFile };
 }
 
 function validateConfig(config: StrategyConfig): string | null {
@@ -89,6 +89,10 @@ export function BacktestPage() {
   const [isLoadingRun, setIsLoadingRun] = useState(false);
   const [deletingRunID, setDeletingRunID] = useState<string | null>(null);
   const [pendingDeleteRunID, setPendingDeleteRunID] = useState<string | null>(null);
+  const [isDeletingAllRuns, setIsDeletingAllRuns] = useState(false);
+  const [pendingDeleteAllRuns, setPendingDeleteAllRuns] = useState(false);
+  const [deletingCandleSetID, setDeletingCandleSetID] = useState<string | null>(null);
+  const [pendingDeleteCandleSetID, setPendingDeleteCandleSetID] = useState<string | null>(null);
   const [loadedRunID, setLoadedRunID] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const selectedSet = useMemo(() => candleSets.find((set) => set.id === selectedSetID), [candleSets, selectedSetID]);
@@ -195,6 +199,32 @@ export function BacktestPage() {
     } catch (deleteError) { setError(displayError(deleteError)); } finally { setDeletingRunID(null); }
   }
 
+  async function deleteAllRuns() {
+    setError(null); setNotice(null); setIsDeletingAllRuns(true);
+    try {
+      await api.deleteAllBacktests();
+      setRuns([]); setPendingDeleteAllRuns(false);
+      if (loadedRunID) { setResult(null); setLoadedRunID(null); }
+      setNotice("All saved backtest runs were deleted. Historical candle sets were kept.");
+    } catch (deleteError) { setError(displayError(deleteError)); } finally { setIsDeletingAllRuns(false); }
+  }
+
+  async function deleteCandleSet(id: string) {
+    setError(null); setNotice(null); setDeletingCandleSetID(id);
+    try {
+      await api.deleteBacktestCandleSet(id);
+      const remaining = candleSets.filter((set) => set.id !== id);
+      setCandleSets(remaining);
+      if (selectedSetID === id) {
+        if (remaining[0]) selectCandleSet(remaining[0]);
+        else { setSelectedSetID(""); setStart(""); setEnd(""); }
+        setResult(null); setDraftInput(null); setLoadedRunID(null);
+      }
+      setPendingDeleteCandleSetID(null);
+      setNotice("Historical candle set deleted.");
+    } catch (deleteError) { setError(displayError(deleteError)); } finally { setDeletingCandleSetID(null); }
+  }
+
   function updateNumeric(field: EditableNumericField, event: ChangeEvent<HTMLInputElement>) {
     const value = Number(event.target.value);
     setConfig((current) => current ? { ...current, [field]: value } : current);
@@ -212,7 +242,7 @@ export function BacktestPage() {
     <section className="backtest-panel"><div className="backtest-section-heading"><div><p className="eyebrow">Immutable source data</p><h2>Historical candles</h2></div></div>
       <form className="backtest-import" onSubmit={importCSV}><label className="field"><span>Source label</span><input onChange={(event) => setSourceLabel(event.target.value)} placeholder="Coinbase daily export" value={sourceLabel} /></label><label className="field"><span>CSV file</span><input accept=".csv,text/csv" onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)} ref={fileInput} type="file" /></label><button className="secondary-button" disabled={isImporting} type="submit">{isImporting ? "Importing…" : "Import CSV"}</button></form>
       <p className="backtest-help">Required schema: <code>timestamp,open,high,low,close,volume</code>. Timestamps must be UTC midnight; 201 or more contiguous daily candles are required.</p>
-      {candleSets.length === 0 ? <p className="muted">No {asset} candle sets have been imported yet.</p> : <div className="candle-set-list">{candleSets.map((set) => <button className={set.id === selectedSetID ? "candle-set candle-set--active" : "candle-set"} key={set.id} onClick={() => selectCandleSet(set)} type="button"><strong>{set.sourceFilename}</strong><span>{set.sourceLabel} · {set.candleCount.toLocaleString()} candles</span><span>{dateValue(set.firstTimestamp)} to {dateValue(set.lastTimestamp)} · SHA {set.originalSha256.slice(0, 12)}</span></button>)}</div>}
+      {candleSets.length === 0 ? <p className="muted">No {asset} candle sets have been imported yet.</p> : <div className="candle-set-list">{candleSets.map((set) => <div className="candle-set-row" key={set.id}><button className={set.id === selectedSetID ? "candle-set candle-set--active" : "candle-set"} onClick={() => selectCandleSet(set)} type="button"><strong>{set.sourceFilename}</strong><span>{set.sourceLabel} · {set.candleCount.toLocaleString()} candles</span><span>{dateValue(set.firstTimestamp)} to {dateValue(set.lastTimestamp)} · SHA {set.originalSha256.slice(0, 12)}</span></button><div className="candle-set-actions">{pendingDeleteCandleSetID === set.id ? <><button className="secondary-button danger-button" disabled={deletingCandleSetID !== null} onClick={() => void deleteCandleSet(set.id)} type="button">{deletingCandleSetID === set.id ? "Deleting…" : "Confirm delete"}</button><button className="secondary-button" disabled={deletingCandleSetID !== null} onClick={() => setPendingDeleteCandleSetID(null)} type="button">Cancel</button></> : <button className="secondary-button danger-button" disabled={deletingCandleSetID !== null} onClick={() => setPendingDeleteCandleSetID(set.id)} type="button">Delete</button>}</div></div>)}</div>}
     </section>
 
     <form className="backtest-run-form" onSubmit={runBacktest}><section className="backtest-panel"><div className="backtest-section-heading"><div><p className="eyebrow">Run-local settings</p><h2>Simulation setup</h2></div><p className="muted">Copied from the selected {asset} strategy; edits here do not save to the live strategy.</p></div>
@@ -224,7 +254,7 @@ export function BacktestPage() {
 
     {result && <><div className="form-actions"><button className="primary-button" disabled={isSaving || isRunning || !!loadedRunID || !draftInput} onClick={() => void saveRun()} type="button">{isSaving ? "Saving…" : loadedRunID ? "Run saved" : "Save run"}</button></div><BacktestSummary asset={result.request.asset} result={result} /><BacktestEquityChart points={result.equityCurve} /><BacktestTradeTable signals={result.signals} trades={result.trades} /></>}
     <section className="backtest-results-section">
-      <div className="backtest-section-heading"><div><p className="eyebrow">Read-only archive</p><h2>Saved runs ({runs.length})</h2></div><button aria-expanded={savedRunsOpen} className="secondary-button" onClick={() => setSavedRunsOpen((open) => !open)} type="button">{savedRunsOpen ? "Hide" : "Show"}</button></div>
+      <div className="backtest-section-heading"><div><p className="eyebrow">Read-only archive</p><h2>Saved runs ({runs.length})</h2></div><div className="saved-run-actions"><button aria-expanded={savedRunsOpen} className="secondary-button" onClick={() => setSavedRunsOpen((open) => !open)} type="button">{savedRunsOpen ? "Hide" : "Show"}</button>{runs.length > 0 && (pendingDeleteAllRuns ? <><button className="secondary-button danger-button" disabled={isDeletingAllRuns || deletingRunID !== null} onClick={() => void deleteAllRuns()} type="button">{isDeletingAllRuns ? "Deleting…" : "Confirm delete all"}</button><button className="secondary-button" disabled={isDeletingAllRuns} onClick={() => setPendingDeleteAllRuns(false)} type="button">Cancel</button></> : <button className="secondary-button danger-button" disabled={isDeletingAllRuns || deletingRunID !== null} onClick={() => setPendingDeleteAllRuns(true)} type="button">Delete all</button>)}</div></div>
       {savedRunsOpen && (runs.length === 0 ? <p className="muted">Click Save run after a simulation to keep it here.</p> : <div className="saved-runs">{runs.map((run) => <div className="saved-run" key={run.id}>
         <div><strong>{run.asset} · {strategyName(run.strategyId)} · {run.start.slice(0, 10)} to {run.end.slice(0, 10)}</strong><span>Created {new Date(run.createdAt).toLocaleDateString()} · ${run.startingCashUsd.toLocaleString()} starting capital</span></div>
         <div><span className={run.returnPct >= 0 ? "metric--positive" : "metric--negative"}>{run.returnPct >= 0 ? "+" : ""}{run.returnPct.toFixed(2)}%</span><small>max DD {run.maximumDrawdownPct.toFixed(2)}%</small></div>
@@ -236,7 +266,7 @@ export function BacktestPage() {
           </> : <button className="secondary-button danger-button" disabled={deletingRunID !== null} onClick={() => setPendingDeleteRunID(run.id)} type="button">Delete</button>}
         </div>
       </div>)}</div>)}
-      <p className="backtest-help">Delete removes the saved simulation and its audit data. Imported candle sets are kept.</p>
+      <p className="backtest-help">Delete removes saved simulation audit data. Delete all clears this archive only; imported candle sets are kept.</p>
     </section>
   </section>;
 }

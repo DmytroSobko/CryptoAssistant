@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/dmytrosobko/crypto-strategy-assistant/backend/internal/market"
+	"github.com/dmytrosobko/crypto-strategy-assistant/backend/internal/portfolio"
 	"github.com/dmytrosobko/crypto-strategy-assistant/backend/internal/strategy"
 )
 
@@ -40,5 +41,29 @@ func TestEvaluateStrategyAtomicallyDeduplicatesActionEvents(t *testing.T) {
 	}
 	if len(events) != 1 || events[0].Action != string(strategy.ActionBuy40) || !events[0].Timestamp.Equal(candle.Timestamp) {
 		t.Fatalf("unexpected idempotent events: %+v", events)
+	}
+}
+
+func TestStaleHistoricalPeakEntry(t *testing.T) {
+	input := StrategyEvaluationInput{
+		Position: portfolio.Asset{Symbol: "BTC"},
+		Config:   strategy.Config{ATHEntryOverrideEnabled: true, ATHReferencePeak: 100, ATHEntryThresholdPct: 60},
+	}
+	pending := strategy.Result{Action: strategy.ActionBuy40, Price: 61, Reason: "ATH entry override: old signal"}
+	if !staleHistoricalPeakEntry(pending, input) {
+		t.Fatal("expected entry above the new threshold to be stale")
+	}
+	pending.Price = 60
+	pending.RecommendationRuleFingerprint = historicalPeakEntryFingerprint(pending, input.Config)
+	if staleHistoricalPeakEntry(pending, input) {
+		t.Fatal("entry at the current threshold must remain pending")
+	}
+	pending.Price, pending.Reason = 61, "Recovery breakout entry"
+	if staleHistoricalPeakEntry(pending, input) {
+		t.Fatal("non-historical entry must not be dismissed automatically")
+	}
+	pending.Reason, input.Position.Quantity = "ATH entry override: old signal", 1
+	if staleHistoricalPeakEntry(pending, input) {
+		t.Fatal("an entry with a recorded position must not be dismissed automatically")
 	}
 }

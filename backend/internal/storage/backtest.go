@@ -17,7 +17,10 @@ import (
 
 const backtestCandleSchemaVersion = 1
 
-var ErrBacktestCandleSetDuplicate = errors.New("backtest candle set already exists")
+var (
+	ErrBacktestCandleSetDuplicate = errors.New("backtest candle set already exists")
+	ErrBacktestCandleSetInUse     = errors.New("backtest candle set is used by saved runs")
+)
 
 // BacktestCandleSet describes an immutable imported historical data set. It
 // intentionally has no relationship to the live market_snapshots table.
@@ -113,6 +116,39 @@ func (s *Store) ListBacktestCandleSets(ctx context.Context, asset string) ([]Bac
 		return nil, fmt.Errorf("iterate backtest candle sets: %w", err)
 	}
 	return sets, nil
+}
+
+// DeleteBacktestCandleSet removes an imported source only when no saved run
+// references it. This keeps saved simulations reproducible and auditable.
+func (s *Store) DeleteBacktestCandleSet(ctx context.Context, id string) (bool, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return false, nil
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, fmt.Errorf("begin backtest candle-set deletion: %w", err)
+	}
+	defer tx.Rollback()
+	var runs int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM backtest_runs WHERE candle_set_id = ?`, id).Scan(&runs); err != nil {
+		return false, fmt.Errorf("count backtest candle-set references: %w", err)
+	}
+	if runs > 0 {
+		return false, ErrBacktestCandleSetInUse
+	}
+	result, err := tx.ExecContext(ctx, `DELETE FROM backtest_candle_sets WHERE id = ?`, id)
+	if err != nil {
+		return false, fmt.Errorf("delete backtest candle set: %w", err)
+	}
+	deleted, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("count deleted backtest candle sets: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return false, fmt.Errorf("commit backtest candle-set deletion: %w", err)
+	}
+	return deleted > 0, nil
 }
 
 func (s *Store) GetBacktestCandleSet(ctx context.Context, id string) (BacktestCandleSet, []market.Candle, error) {

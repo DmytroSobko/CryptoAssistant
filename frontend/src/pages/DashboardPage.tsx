@@ -8,13 +8,14 @@ interface DashboardPageProps {
   isLoading: boolean;
   lastRefreshedAt: Date | null;
   onRefresh: (refreshMarketData?: boolean) => Promise<void>;
+  onResolveRecommendation: (id: number, status: "EXECUTED" | "DISMISSED") => void;
 }
 
 function refreshTime(value: Date | null): string {
   return value ? new Intl.DateTimeFormat("en-US", { timeStyle: "medium" }).format(value) : "Not checked yet";
 }
 
-export function DashboardPage({ portfolio, market, strategy, isLoading, lastRefreshedAt, onRefresh }: DashboardPageProps) {
+export function DashboardPage({ portfolio, market, strategy, isLoading, lastRefreshedAt, onRefresh, onResolveRecommendation }: DashboardPageProps) {
   const position = (symbol: "BTC" | "ETH") => portfolio?.assets.find((asset) => asset.symbol === symbol);
   return (
     <>
@@ -32,8 +33,8 @@ export function DashboardPage({ portfolio, market, strategy, isLoading, lastRefr
         </div>
       </header>
       <div className="asset-grid">
-        <AssetCard asset="BTC" position={position("BTC")} market={market.BTC} strategy={strategy.BTC} isLoading={isLoading} />
-        <AssetCard asset="ETH" position={position("ETH")} market={market.ETH} strategy={strategy.ETH} isLoading={isLoading} />
+        <AssetCard asset="BTC" position={position("BTC")} market={market.BTC} strategy={strategy.BTC} isLoading={isLoading} onResolveRecommendation={onResolveRecommendation} />
+        <AssetCard asset="ETH" position={position("ETH")} market={market.ETH} strategy={strategy.ETH} isLoading={isLoading} onResolveRecommendation={onResolveRecommendation} />
       </div>
     </>
   );

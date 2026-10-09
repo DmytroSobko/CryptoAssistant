@@ -172,6 +172,20 @@ func (s *Store) DeleteBacktestRun(ctx context.Context, id string) (bool, error) 
 	return deleted == 1, nil
 }
 
+// DeleteAllBacktestRuns clears the read-only archive while retaining imported
+// candle sets so they can be reused for later simulations.
+func (s *Store) DeleteAllBacktestRuns(ctx context.Context) (int64, error) {
+	result, err := s.db.ExecContext(ctx, `DELETE FROM backtest_runs`)
+	if err != nil {
+		return 0, fmt.Errorf("delete all backtest runs: %w", err)
+	}
+	count, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("count deleted backtest runs: %w", err)
+	}
+	return count, nil
+}
+
 func (s *Store) ListBacktestRuns(ctx context.Context, limit int) ([]BacktestRunSummary, error) {
 	if limit < 1 || limit > 500 {
 		limit = 100

@@ -5,6 +5,8 @@ import "fmt"
 type ATHEntryOverrideSettings struct {
 	Enabled      bool    `json:"enabled"`
 	ThresholdPct float64 `json:"thresholdPct"`
+	SourceFile   string  `json:"sourceFile"`
+	PeakCount    int     `json:"peakCount"`
 }
 
 // ResolvedStrategyID maps configurations created before strategy selection to
@@ -90,6 +92,12 @@ func (settings AssetStrategySettings) Normalized() (AssetStrategySettings, error
 	}
 	if !validPositivePercentage(override.ThresholdPct) {
 		return AssetStrategySettings{}, fmt.Errorf("ATH entry override threshold must be greater than 0 and at most 100")
+	}
+	if override.PeakCount == 0 {
+		override.PeakCount = 3
+	}
+	if override.PeakCount < 1 || override.PeakCount > 20 {
+		return AssetStrategySettings{}, fmt.Errorf("historical peak count must be between 1 and 20")
 	}
 	return AssetStrategySettings{SelectedStrategyID: selected, RecoveryBreakout: recovery, DipAccumulation: dip, ATHEntryOverride: override}, nil
 }

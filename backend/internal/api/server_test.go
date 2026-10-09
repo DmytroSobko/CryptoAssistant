@@ -116,6 +116,9 @@ func TestBacktestEndpointsCreateAuditableRunWithoutChangingLiveResponses(t *test
 	if missing.Code != http.StatusNotFound {
 		t.Fatalf("missing run status=%d body=%s", missing.Code, missing.Body.String())
 	}
+	if response := serve(handler, http.MethodDelete, "/api/backtest/candle-sets/"+candleSet.ID, nil); response.Code != http.StatusConflict {
+		t.Fatalf("used candle-set deletion status=%d body=%s", response.Code, response.Body.String())
+	}
 	deleted := serve(handler, http.MethodDelete, "/api/backtests/"+run.ID, nil)
 	if deleted.Code != http.StatusNoContent {
 		t.Fatalf("delete status=%d body=%s", deleted.Code, deleted.Body.String())
@@ -125,6 +128,9 @@ func TestBacktestEndpointsCreateAuditableRunWithoutChangingLiveResponses(t *test
 	}
 	if response := serve(handler, http.MethodDelete, "/api/backtests/"+run.ID, nil); response.Code != http.StatusNotFound {
 		t.Fatalf("repeat delete status=%d body=%s", response.Code, response.Body.String())
+	}
+	if response := serve(handler, http.MethodDelete, "/api/backtest/candle-sets/"+candleSet.ID, nil); response.Code != http.StatusNoContent {
+		t.Fatalf("candle-set deletion status=%d body=%s", response.Code, response.Body.String())
 	}
 
 	portfolioAfter := serve(handler, http.MethodGet, "/api/portfolio", nil)
@@ -410,7 +416,7 @@ func TestStrategyEndpointEvaluatesDailyCandlesAndRecordsOneActionEvent(t *testin
 
 	second := httptest.NewRecorder()
 	handler.ServeHTTP(second, httptest.NewRequest(http.MethodGet, "/api/strategy/BTC", nil))
-	if second.Code != http.StatusOK || !bytes.Contains(second.Body.Bytes(), []byte(`"action":"HOLD"`)) {
+	if second.Code != http.StatusOK || !bytes.Contains(second.Body.Bytes(), []byte(`"action":"BUY_40"`)) || !bytes.Contains(second.Body.Bytes(), []byte(`"recommendationStatus":"PENDING"`)) {
 		t.Fatalf("duplicate strategy response (%d): %s", second.Code, second.Body.String())
 	}
 

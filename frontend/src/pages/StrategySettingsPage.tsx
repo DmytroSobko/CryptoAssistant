@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from "react";
+import { ChangeEvent, FormEvent, useEffect, useRef, useState } from "react";
 import { api } from "../api/client";
 import type { AssetStrategySettings, AssetSymbol, StrategyConfig, StrategyID } from "../types/api";
 
@@ -11,15 +11,16 @@ type NumericField =
   | "entry2DipFromFirstPct" | "entry3DipFromFirstPct" | "estimatedSellFeeBps";
 
 type ConfigForm = Record<NumericField, string> & {
-  trendMode: StrategyConfig["trendMode"];
-  breakEvenExitFloorEnabled: boolean;
+	trendMode: StrategyConfig["trendMode"];
+	breakEvenExitFloorEnabled: boolean;
+	intradayDrawdownAlertsEnabled: boolean;
 };
 
 interface ProfileForm {
   selectedStrategyId: StrategyID;
   recoveryBreakout: ConfigForm;
   dipAccumulation: ConfigForm;
-  athEntryOverride: { enabled: boolean; thresholdPct: string };
+  athEntryOverride: { enabled: boolean; thresholdPct: string; sourceFile: string; peakCount: string };
 }
 
 interface FieldDefinition {
@@ -77,7 +78,7 @@ function formFromConfig(config: StrategyConfig): ConfigForm {
     drawdown2Pct: String(config.drawdown2Pct), drawdown2SellPct: String(config.drawdown2SellPct),
     drawdown3Pct: String(config.drawdown3Pct), drawdown3SellPct: String(config.drawdown3SellPct),
     entry2DipFromFirstPct: String(config.entry2DipFromFirstPct ?? 10), entry3DipFromFirstPct: String(config.entry3DipFromFirstPct ?? 20),
-    estimatedSellFeeBps: String(config.estimatedSellFeeBps ?? 10), breakEvenExitFloorEnabled: config.breakEvenExitFloorEnabled ?? true,
+    estimatedSellFeeBps: String(config.estimatedSellFeeBps ?? 10), breakEvenExitFloorEnabled: config.breakEvenExitFloorEnabled ?? true, intradayDrawdownAlertsEnabled: config.intradayDrawdownAlertsEnabled ?? false,
   };
 }
 
@@ -86,7 +87,7 @@ function formFromSettings(settings: AssetStrategySettings): ProfileForm {
     selectedStrategyId: settings.selectedStrategyId,
     recoveryBreakout: formFromConfig(settings.recoveryBreakout),
     dipAccumulation: formFromConfig(settings.dipAccumulation),
-    athEntryOverride: { enabled: settings.athEntryOverride?.enabled ?? false, thresholdPct: String(settings.athEntryOverride?.thresholdPct ?? 60) },
+    athEntryOverride: { enabled: settings.athEntryOverride?.enabled ?? false, thresholdPct: String(settings.athEntryOverride?.thresholdPct ?? 60), sourceFile: settings.athEntryOverride?.sourceFile ?? ".backtestdata/btc-usd-daily-10y-2016-09-30-to-2026-10-07.csv", peakCount: String(settings.athEntryOverride?.peakCount ?? 3) },
   };
 }
 
@@ -126,19 +127,20 @@ function configFromForm(form: ConfigForm, strategyId: StrategyID): StrategyConfi
     if (entry2DipFromFirstPct <= 0 || entry2DipFromFirstPct >= 100 || entry3DipFromFirstPct <= entry2DipFromFirstPct || entry3DipFromFirstPct >= 100) throw new Error("Entry 3 must be a deeper dip than Entry 2, and both must be between 0 and 100%.");
     if (estimatedSellFeeBps < 0 || estimatedSellFeeBps >= 10000) throw new Error("Estimated sell fee must be at least 0 and below 10,000 bps.");
     if (!form.breakEvenExitFloorEnabled) throw new Error("Dip Accumulation requires the break-even exit floor.");
-    return { ...config, entry2DipFromFirstPct, entry3DipFromFirstPct, estimatedSellFeeBps, breakEvenExitFloorEnabled: true };
+    return { ...config, entry2DipFromFirstPct, entry3DipFromFirstPct, estimatedSellFeeBps, breakEvenExitFloorEnabled: true, intradayDrawdownAlertsEnabled: form.intradayDrawdownAlertsEnabled };
   }
-  return config;
+  return { ...config, intradayDrawdownAlertsEnabled: form.intradayDrawdownAlertsEnabled };
 }
 
 function settingsFromForm(form: ProfileForm): AssetStrategySettings {
-  const thresholdPct = numberValue(form.athEntryOverride.thresholdPct, "Historical-peak threshold");
+	const thresholdPct = numberValue(form.athEntryOverride.thresholdPct, "Historical-peak threshold");
+	const peakCount = numberValue(form.athEntryOverride.peakCount, "Historical peak count");
   if (thresholdPct <= 0 || thresholdPct > 100) throw new Error("Historical-peak threshold must be greater than 0 and at most 100%.");
   return {
     selectedStrategyId: form.selectedStrategyId,
     recoveryBreakout: configFromForm(form.recoveryBreakout, "RECOVERY_BREAKOUT"),
     dipAccumulation: configFromForm(form.dipAccumulation, "DIP_ACCUMULATION"),
-    athEntryOverride: { enabled: form.athEntryOverride.enabled, thresholdPct },
+	athEntryOverride: { enabled: form.athEntryOverride.enabled, thresholdPct, sourceFile: form.athEntryOverride.sourceFile.trim(), peakCount },
   };
 }
 
@@ -152,7 +154,9 @@ export function StrategySettingsPage() {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [isUploadingPeakSource, setIsUploadingPeakSource] = useState(false);
   const [saved, setSaved] = useState(false);
+  const peakSourceFileInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     let active = true;
@@ -173,6 +177,12 @@ export function StrategySettingsPage() {
     const key = selectedConfigKey(currentProfile.selectedStrategyId);
     return { ...current, [selectedAsset]: { ...currentProfile, [key]: { ...currentProfile[key], [field]: value } } };
   });
+  const updateIntradayAlerts = (enabled: boolean) => setForms((current) => {
+    const currentProfile = current[selectedAsset];
+    if (!currentProfile) return current;
+    const key = selectedConfigKey(currentProfile.selectedStrategyId);
+    return { ...current, [selectedAsset]: { ...currentProfile, [key]: { ...currentProfile[key], intradayDrawdownAlertsEnabled: enabled } } };
+  });
   const updateTrendMode = (trendMode: StrategyConfig["trendMode"]) => setForms((current) => {
     const currentProfile = current[selectedAsset];
     if (!currentProfile) return current;
@@ -182,6 +192,17 @@ export function StrategySettingsPage() {
   const selectAsset = (asset: AssetSymbol) => { setSelectedAsset(asset); setError(null); setSaved(false); };
   const selectStrategy = (selectedStrategyId: StrategyID) => { setForms((current) => current[selectedAsset] ? { ...current, [selectedAsset]: { ...current[selectedAsset]!, selectedStrategyId } } : current); setError(null); setSaved(false); };
   const updateATHOverride = (change: Partial<ProfileForm["athEntryOverride"]>) => setForms((current) => current[selectedAsset] ? { ...current, [selectedAsset]: { ...current[selectedAsset]!, athEntryOverride: { ...current[selectedAsset]!.athEntryOverride, ...change } } } : current);
+
+  async function uploadPeakSource(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setError(null); setSaved(false); setIsUploadingPeakSource(true);
+    try {
+      const upload = await api.uploadHistoricalPeakSource(selectedAsset, file.name, await file.text());
+      updateATHOverride({ sourceFile: upload.sourceFile });
+    } catch (uploadError) { setError(uploadError instanceof Error ? uploadError.message : "Could not store the historical peak source."); }
+    finally { setIsUploadingPeakSource(false); if (peakSourceFileInput.current) peakSourceFileInput.current.value = ""; }
+  }
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -199,13 +220,13 @@ export function StrategySettingsPage() {
     <header className="page-header"><div><p className="eyebrow">Deterministic rules</p><h1>Strategy settings</h1></div><p className="page-note">Changes affect future advisory evaluations only. They never execute a trade.</p></header>
     <div aria-label="Asset settings" className="asset-tabs" role="tablist">{(["BTC", "ETH"] as AssetSymbol[]).map((asset) => <button aria-selected={selectedAsset === asset} className={selectedAsset === asset ? "asset-tab asset-tab--active" : "asset-tab"} key={asset} onClick={() => selectAsset(asset)} role="tab" type="button">{asset}</button>)}</div>
     <form className="settings-form" onSubmit={save}>
-      <section className="settings-section"><h2>Historical-peak entry override</h2><p className="settings-help">This per-asset rule applies before either strategy’s normal first-entry gate. On a fresh cash cycle, it gives one normal Entry 1 when the completed daily close is at or below the selected percentage of the highest daily high available before that day.</p><label className="checkbox-field"><input checked={profile.athEntryOverride.enabled} onChange={(event) => updateATHOverride({ enabled: event.target.checked })} type="checkbox" /> Enable historical-peak entry for {selectedAsset}</label><label className="field"><span>Buy at or below (% of prior historical peak)</span><input aria-label="Historical-peak entry threshold" disabled={!profile.athEntryOverride.enabled} max="100" min="0.0001" onChange={(event) => updateATHOverride({ thresholdPct: event.target.value })} step="any" type="number" value={profile.athEntryOverride.thresholdPct} /></label><p className="settings-disclosure">Uses completed UTC daily closes and the bundled 10-year daily history (from 2016-09-30 onward). It does not inspect future prices. After it opens a position, normal strategy rules control the remaining entries and all exits.</p></section>
+      <section className="settings-section"><h2>Historical-peak entry override</h2><p className="settings-help">On a fresh cycle, Entry 1 is allowed at the selected percentage of the average of the highest spaced peaks before that day.</p><label className="checkbox-field"><input checked={profile.athEntryOverride.enabled} onChange={(event) => updateATHOverride({ enabled: event.target.checked })} type="checkbox" /> Enable historical-peak entry for {selectedAsset}</label><label className="field"><span>Historical daily CSV source</span><input readOnly value={profile.athEntryOverride.sourceFile} /></label><label className="field"><span>Choose daily CSV file</span><input accept=".csv,text/csv" disabled={!profile.athEntryOverride.enabled || isUploadingPeakSource} onChange={uploadPeakSource} ref={peakSourceFileInput} type="file" /><small>{isUploadingPeakSource ? "Copying and validating source…" : "The app stores a content-addressed copy, so later changes to the original file cannot alter this rule."}</small></label><label className="field"><span>Peaks to average (three months apart)</span><input disabled={!profile.athEntryOverride.enabled} max="20" min="1" onChange={(event) => updateATHOverride({ peakCount: event.target.value })} step="1" type="number" value={profile.athEntryOverride.peakCount} /></label><label className="field"><span>Buy at or below (% of peak average)</span><input aria-label="Historical-peak entry threshold" disabled={!profile.athEntryOverride.enabled} max="100" min="0.0001" onChange={(event) => updateATHOverride({ thresholdPct: event.target.value })} step="any" type="number" value={profile.athEntryOverride.thresholdPct} /></label><p className="settings-disclosure">The selected file must use timestamp, open, high, low, close, volume columns. Only peaks dated before the signal day are used.</p></section>
       <section className="settings-section strategy-selector"><div><h2>Strategy</h2><p className="settings-help">Choose the single ruleset that produces future {selectedAsset} advisories. Each strategy keeps its own saved settings.</p></div><label className="field"><span>Active strategy for {selectedAsset}</span><select aria-label={`Active strategy for ${selectedAsset}`} onChange={(event) => selectStrategy(event.target.value as StrategyID)} value={profile.selectedStrategyId}><option value="RECOVERY_BREAKOUT">Recovery Breakout</option><option value="DIP_ACCUMULATION">Dip Accumulation</option></select></label><p className="strategy-description">{isDipAccumulation ? "Confirms an initial recovery entry, then averages down at fixed percentages below that first-entry reference. It first takes the configured profit, then enables break-even-protected drawdown exits." : "Uses the existing recovery-breakout rules for each staged entry and preserves the MVP sell behaviour."}</p></section>
       <section className="settings-section"><h2>Initial entry confirmation</h2><p className="settings-help">Both strategies require this correction, recovery, and trend gate before their first entry.</p><label className="field"><span>Trend mode</span><select aria-label="Trend filter mode" onChange={(event) => updateTrendMode(event.target.value as StrategyConfig["trendMode"])} value={form.trendMode}><option value="STRICT">STRICT — close must be above SMA200</option><option value="RECOVERY">RECOVERY — allow a confirmed recovery below SMA200</option><option value="OFF">OFF — do not use the SMA200 filter</option></select></label><NumberFields fields={initialEntryFields} form={form} onChange={updateField} /></section>
       <div className="settings-grid">
         <section className="settings-section"><h2>{isDipAccumulation ? "Average-down entries" : "Staged entry"}</h2><p className="settings-help">{isDipAccumulation ? "Entry 2 and Entry 3 are based on the fixed first-entry signal reference, not another breakout." : "Each allocation requires its own confirmed recovery breakout."}</p><NumberFields fields={allocationFields} form={form} onChange={updateField} />{isDipAccumulation && <NumberFields fields={dipFields} form={form} onChange={updateField} />}</section>
         <section className="settings-section"><h2>Profit protection</h2><NumberFields fields={profitFields} form={form} onChange={updateField} /></section>
-        <section className="settings-section"><h2>Drawdown exits</h2><NumberFields fields={drawdownFields} form={form} onChange={updateField} /></section>
+        <section className="settings-section"><h2>Drawdown exits</h2><NumberFields fields={drawdownFields} form={form} onChange={updateField} /><label className="checkbox-field"><input checked={form.intradayDrawdownAlertsEnabled} onChange={(event) => updateIntradayAlerts(event.target.checked)} type="checkbox" /> Enable intraday drawdown alerts</label><p className="settings-disclosure">Uses the latest refreshed display price only for sell alerts. Entries and high-water marks remain based on completed daily closes. An intraday alert does not consume the sell stage.</p></section>
         {isDipAccumulation && <section className="settings-section"><h2>Break-even exit floor</h2><p className="settings-help">When a drawdown exit is due, the advisory supplies a minimum gross sale price. It may keep an underwater position open until the expected net proceeds meet the average entry price.</p><label className="field"><span>Estimated sell fee (bps)</span><input aria-label="Estimated sell fee in basis points" min="0" onChange={(event) => updateField("estimatedSellFeeBps", event.target.value)} step="any" type="number" value={form.estimatedSellFeeBps} /></label><label className="checkbox-field"><input checked={form.breakEvenExitFloorEnabled} disabled type="checkbox" /> Break-even exit floor enabled (required for this strategy)</label><p className="settings-disclosure">This is an advisory limit, not a guarantee of a manual market-order fill. Use an appropriate limit price when acting on a protected exit.</p></section>}
       </div>
       {error && <p className="form-message form-message--error" role="alert">{error}</p>}

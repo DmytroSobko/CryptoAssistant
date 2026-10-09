@@ -56,6 +56,19 @@ func (s *Server) handleListBacktestCandleSets(w http.ResponseWriter, r *http.Req
 	writeJSON(w, http.StatusOK, sets)
 }
 
+func (s *Server) handleDeleteBacktestCandleSet(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimSpace(r.PathValue("id"))
+	if id == "" {
+		writeError(w, http.StatusNotFound, "backtest candle set was not found")
+		return
+	}
+	if err := s.backtestService.DeleteCandleSet(r.Context(), id); err != nil {
+		writeBacktestError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (s *Server) handleCreateBacktest(w http.ResponseWriter, r *http.Request) {
 	s.handleRunBacktest(w, r, true)
 }
@@ -105,6 +118,14 @@ func (s *Server) handleListBacktests(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, runs)
 }
 
+func (s *Server) handleDeleteAllBacktests(w http.ResponseWriter, r *http.Request) {
+	if _, err := s.backtestService.DeleteAllRuns(r.Context()); err != nil {
+		writeBacktestError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (s *Server) handleGetBacktest(w http.ResponseWriter, r *http.Request) {
 	id := strings.TrimSpace(r.PathValue("id"))
 	if id == "" {
@@ -145,6 +166,8 @@ func writeBacktestError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, backtestservice.ErrNotFound):
 		writeError(w, http.StatusNotFound, "backtest resource was not found")
+	case errors.Is(err, backtestservice.ErrConflict):
+		writeError(w, http.StatusConflict, strings.TrimPrefix(err.Error(), backtestservice.ErrConflict.Error()+": "))
 	case errors.Is(err, backtestservice.ErrInvalid):
 		writeError(w, http.StatusBadRequest, strings.TrimPrefix(err.Error(), backtestservice.ErrInvalid.Error()+": "))
 	default:
