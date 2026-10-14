@@ -273,9 +273,10 @@ func strategyEvaluationInput(ctx context.Context, tx *sql.Tx, asset string) (Str
 	config.ATHEntryOverrideEnabled = settings.ATHEntryOverride.Enabled
 	config.ATHEntryThresholdPct = settings.ATHEntryOverride.ThresholdPct
 	config.ATHPeakCount = settings.ATHEntryOverride.PeakCount
+	config.ATHPeakSpacingMonths = settings.ATHEntryOverride.PeakSpacingMonths
 	config.ATHSourceFile = settings.ATHEntryOverride.SourceFile
 	if len(candles) > 0 {
-		peak, selected, peakErr := ath.AverageSpacedPeaksBefore(config.ATHSourceFile, candles[len(candles)-1].Timestamp, config.ATHPeakCount)
+		peak, selected, peakErr := ath.AverageSpacedPeaksBefore(config.ATHSourceFile, candles[len(candles)-1].Timestamp, config.ATHPeakCount, config.ATHPeakSpacingMonths)
 		if peakErr != nil {
 			return StrategyEvaluationInput{}, peakErr
 		}

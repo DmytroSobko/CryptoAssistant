@@ -149,6 +149,10 @@ func (s *Service) DeleteRun(ctx context.Context, id string) error {
 	if id == "" {
 		return fmt.Errorf("backtest run: %w", ErrNotFound)
 	}
+	run, err := s.GetRun(ctx, id)
+	if err != nil {
+		return err
+	}
 	deleted, err := s.store.DeleteBacktestRun(ctx, id)
 	if err != nil {
 		return err
@@ -156,11 +160,23 @@ func (s *Service) DeleteRun(ctx context.Context, id string) error {
 	if !deleted {
 		return fmt.Errorf("backtest run %q: %w", id, ErrNotFound)
 	}
+	if _, err := s.store.DeleteBacktestCandleSet(ctx, run.CandleSetID); err != nil && !errors.Is(err, storage.ErrBacktestCandleSetInUse) {
+		return err
+	}
 	return nil
 }
 
 func (s *Service) DeleteAllRuns(ctx context.Context) (int64, error) {
-	return s.store.DeleteAllBacktestRuns(ctx)
+	linked, count, err := s.store.DeleteAllBacktestRuns(ctx)
+	if err != nil {
+		return 0, err
+	}
+	for _, candleSetID := range linked {
+		if _, err := s.store.DeleteBacktestCandleSet(ctx, candleSetID); err != nil && !errors.Is(err, storage.ErrBacktestCandleSetInUse) {
+			return 0, err
+		}
+	}
+	return count, nil
 }
 
 func (s *Service) ListRuns(ctx context.Context, limit int) ([]storage.BacktestRunSummary, error) {

@@ -36,7 +36,7 @@ func athEntryOverride(candles []market.Candle, position portfolio.Asset, config 
 	result := Result{
 		Asset: state.Asset, Action: ActionBuy40, ActionPct: config.Entry1Pct, State: state.CurrentState,
 		Price: latest.Close, Trend: string(ClassifyTrend(candles)), PositionPct: config.Entry1Pct,
-		Reason:        fmt.Sprintf("ATH entry override: completed daily close %.2f is at or below %.2f%% of the %.2f average from %d spaced prior peaks (threshold %.2f).", latest.Close, config.ATHEntryThresholdPct, config.ATHReferencePeak, config.ATHPeakCount, threshold),
+		Reason:        fmt.Sprintf("ATH entry override: completed daily close %.2f is at or below %.2f%% of the %.2f average from %d prior peaks spaced at least %d months apart (threshold %.2f).", latest.Close, config.ATHEntryThresholdPct, config.ATHReferencePeak, config.ATHPeakCount, config.ATHPeakSpacingMonths, threshold),
 		NextCondition: "After this first-entry advisory, follow the selected strategy's normal staged-entry rules.",
 	}
 	return result, state, true

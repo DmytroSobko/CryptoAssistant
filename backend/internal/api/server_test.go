@@ -129,8 +129,8 @@ func TestBacktestEndpointsCreateAuditableRunWithoutChangingLiveResponses(t *test
 	if response := serve(handler, http.MethodDelete, "/api/backtests/"+run.ID, nil); response.Code != http.StatusNotFound {
 		t.Fatalf("repeat delete status=%d body=%s", response.Code, response.Body.String())
 	}
-	if response := serve(handler, http.MethodDelete, "/api/backtest/candle-sets/"+candleSet.ID, nil); response.Code != http.StatusNoContent {
-		t.Fatalf("candle-set deletion status=%d body=%s", response.Code, response.Body.String())
+	if response := serve(handler, http.MethodDelete, "/api/backtest/candle-sets/"+candleSet.ID, nil); response.Code != http.StatusNotFound {
+		t.Fatalf("linked candle set should be removed with run: status=%d body=%s", response.Code, response.Body.String())
 	}
 
 	portfolioAfter := serve(handler, http.MethodGet, "/api/portfolio", nil)

@@ -90,6 +90,7 @@ export interface StrategyConfig {
   athEntryThresholdPct?: number;
   athReferencePeak?: number;
   athPeakCount?: number;
+  athPeakSpacingMonths?: number;
   athSourceFile?: string;
 }
 
@@ -98,6 +99,7 @@ export interface ATHEntryOverrideSettings {
   thresholdPct: number;
   sourceFile?: string;
   peakCount?: number;
+  peakSpacingMonths?: number;
 }
 
 export interface AssetStrategySettings {

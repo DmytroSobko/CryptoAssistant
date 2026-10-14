@@ -172,18 +172,45 @@ func (s *Store) DeleteBacktestRun(ctx context.Context, id string) (bool, error) 
 	return deleted == 1, nil
 }
 
-// DeleteAllBacktestRuns clears the read-only archive while retaining imported
-// candle sets so they can be reused for later simulations.
-func (s *Store) DeleteAllBacktestRuns(ctx context.Context) (int64, error) {
-	result, err := s.db.ExecContext(ctx, `DELETE FROM backtest_runs`)
+// DeleteAllBacktestRuns clears the archive and returns the distinct source
+// candle-set IDs that were linked to the deleted runs.
+func (s *Store) DeleteAllBacktestRuns(ctx context.Context) ([]string, int64, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return 0, fmt.Errorf("delete all backtest runs: %w", err)
+		return nil, 0, fmt.Errorf("begin delete all backtest runs: %w", err)
+	}
+	defer tx.Rollback()
+	rows, err := tx.QueryContext(ctx, `SELECT DISTINCT candle_set_id FROM backtest_runs`)
+	if err != nil {
+		return nil, 0, fmt.Errorf("list linked backtest candle sets: %w", err)
+	}
+	linked := make([]string, 0)
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return nil, 0, fmt.Errorf("scan linked backtest candle set: %w", err)
+		}
+		linked = append(linked, id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, 0, fmt.Errorf("close linked backtest candle sets: %w", err)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, fmt.Errorf("iterate linked backtest candle sets: %w", err)
+	}
+	result, err := tx.ExecContext(ctx, `DELETE FROM backtest_runs`)
+	if err != nil {
+		return nil, 0, fmt.Errorf("delete all backtest runs: %w", err)
 	}
 	count, err := result.RowsAffected()
 	if err != nil {
-		return 0, fmt.Errorf("count deleted backtest runs: %w", err)
+		return nil, 0, fmt.Errorf("count deleted backtest runs: %w", err)
 	}
-	return count, nil
+	if err := tx.Commit(); err != nil {
+		return nil, 0, fmt.Errorf("commit delete all backtest runs: %w", err)
+	}
+	return linked, count, nil
 }
 
 func (s *Store) ListBacktestRuns(ctx context.Context, limit int) ([]BacktestRunSummary, error) {

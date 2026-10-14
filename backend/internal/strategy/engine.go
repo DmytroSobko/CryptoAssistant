@@ -88,6 +88,7 @@ type Config struct {
 	ATHEntryThresholdPct    float64 `json:"athEntryThresholdPct,omitempty"`
 	ATHReferencePeak        float64 `json:"athReferencePeak,omitempty"`
 	ATHPeakCount            int     `json:"athPeakCount,omitempty"`
+	ATHPeakSpacingMonths    int     `json:"athPeakSpacingMonths,omitempty"`
 	ATHSourceFile           string  `json:"athSourceFile,omitempty"`
 }
 

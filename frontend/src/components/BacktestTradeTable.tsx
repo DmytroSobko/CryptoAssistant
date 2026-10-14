@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import type { BacktestSignal, BacktestTrade } from "../types/api";
 
 const usd = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 });
@@ -18,7 +18,7 @@ export function BacktestTradeTable({ signals, trades }: { signals: BacktestSigna
       <section className="backtest-results-section">
         <div className="backtest-section-heading"><div><p className="eyebrow">Assume-filled model</p><h2>Trades ({trades.length.toLocaleString()})</h2></div><button aria-expanded={tradesOpen} className="secondary-button" onClick={() => setTradesOpen((open) => !open)} type="button">{tradesOpen ? "Hide" : "Show"}</button></div>
         {tradesOpen && (trades.length === 0 ? <p className="muted">No simulated fills were produced for this period.</p> : <div className="history-table-wrap"><table className="history-table backtest-table"><thead><tr><th>Signal</th><th>Fill</th><th>Action</th><th>Quantity</th><th>Filled amount (USD)</th><th>Fill price</th><th>Fee</th><th>Net floor</th><th>Status</th></tr></thead><tbody>
-          {trades.map((trade) => <tr key={trade.sequence}><td>{trade.signalTimestamp.slice(0, 10)}</td><td>{trade.executionTimestamp ? trade.executionTimestamp.slice(0, 10) : "—"}</td><td>{formatAction(trade.action, trade.requestedPct)}</td><td>{trade.quantity.toFixed(8)}</td><td>{filledAmount(trade)}</td><td>{trade.fillPrice ? usd.format(trade.fillPrice) : "—"}</td><td>{usd.format(trade.feeUsd)}</td><td>{floor(trade.breakEvenFloorNetPrice)}</td><td><Status value={trade.status} /><small>{trade.reason}</small></td></tr>)}
+          {trades.map((trade) => <Fragment key={trade.sequence}><tr><td>{trade.signalTimestamp.slice(0, 10)}</td><td>{trade.executionTimestamp ? trade.executionTimestamp.slice(0, 10) : "—"}</td><td>{formatAction(trade.action, trade.requestedPct)}</td><td>{trade.quantity.toFixed(8)}</td><td>{filledAmount(trade)}</td><td>{trade.fillPrice ? usd.format(trade.fillPrice) : "—"}</td><td>{usd.format(trade.feeUsd)}</td><td>{floor(trade.breakEvenFloorNetPrice)}</td><td><Status value={trade.status} /><small>{trade.reason}</small></td></tr>{isCycleComplete(trade) && <tr className="backtest-cycle-complete"><td colSpan={2}>Cycle complete</td><td colSpan={2}>All cash</td><td colSpan={5}>Cash balance: <strong>{usd.format(trade.cashAfterUsd)}</strong></td></tr>}</Fragment>)}
         </tbody></table></div>)}
       </section>
     </div>
@@ -32,4 +32,8 @@ function formatAction(action: string, percentage: number) {
   if (action.startsWith("BUY")) return `BUY ${percentage}%`;
   if (action.startsWith("SELL")) return `SELL ${percentage}%`;
   return action.replaceAll("_", " ");
+}
+
+function isCycleComplete(trade: BacktestTrade) {
+  return trade.side === "SELL" && trade.status === "EXECUTED" && trade.quantityAfter <= 1e-10;
 }

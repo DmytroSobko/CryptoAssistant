@@ -20,6 +20,12 @@ func ValidateConfig(config Config) error {
 	if config.ATHEntryOverrideEnabled && !validPositivePercentage(config.ATHEntryThresholdPct) {
 		return fmt.Errorf("ATH entry override threshold must be greater than 0 and at most 100")
 	}
+	if config.ATHPeakCount < 0 || config.ATHPeakCount > 20 {
+		return fmt.Errorf("historical peak count must be between 1 and 20 when provided")
+	}
+	if config.ATHPeakSpacingMonths < 0 || config.ATHPeakSpacingMonths > 120 {
+		return fmt.Errorf("historical peak spacing must be between 1 and 120 months when provided")
+	}
 	return nil
 }
 

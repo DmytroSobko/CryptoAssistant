@@ -6,7 +6,7 @@ import { BacktestTradeTable } from "../components/BacktestTradeTable";
 import type { AssetStrategySettings, AssetSymbol, BacktestCandleSet, BacktestResult, BacktestRunInput, BacktestRunSummary, StrategyConfig, StrategyID } from "../types/api";
 
 const assets: AssetSymbol[] = ["BTC", "ETH"];
-type SharedNumericField = Exclude<keyof StrategyConfig, "trendMode" | "strategyId" | "entry2DipFromFirstPct" | "entry3DipFromFirstPct" | "estimatedSellFeeBps" | "breakEvenExitFloorEnabled" | "intradayDrawdownAlertsEnabled" | "athEntryOverrideEnabled" | "athEntryThresholdPct" | "athReferencePeak" | "athPeakCount" | "athSourceFile">;
+type SharedNumericField = Exclude<keyof StrategyConfig, "trendMode" | "strategyId" | "entry2DipFromFirstPct" | "entry3DipFromFirstPct" | "estimatedSellFeeBps" | "breakEvenExitFloorEnabled" | "intradayDrawdownAlertsEnabled" | "athEntryOverrideEnabled" | "athEntryThresholdPct" | "athReferencePeak" | "athPeakCount" | "athPeakSpacingMonths" | "athSourceFile">;
 type DipNumericField = "entry2DipFromFirstPct" | "entry3DipFromFirstPct";
 type EditableNumericField = SharedNumericField | DipNumericField;
 
@@ -29,7 +29,7 @@ function strategyID(config: StrategyConfig): StrategyID { return config.strategy
 function strategyName(id: StrategyID | undefined): string { return id === "DIP_ACCUMULATION" ? "Dip Accumulation" : "Recovery Breakout"; }
 function configForStrategy(settings: AssetStrategySettings, id: StrategyID): StrategyConfig {
   const base = id === "DIP_ACCUMULATION" ? settings.dipAccumulation : settings.recoveryBreakout;
-  return { ...base, recoveryEntryMinPeakDiscountPct: base.recoveryEntryMinPeakDiscountPct ?? 0, athEntryOverrideEnabled: settings.athEntryOverride?.enabled ?? false, athEntryThresholdPct: settings.athEntryOverride?.thresholdPct ?? 60, athPeakCount: settings.athEntryOverride?.peakCount ?? 3, athSourceFile: settings.athEntryOverride?.sourceFile };
+  return { ...base, recoveryEntryMinPeakDiscountPct: base.recoveryEntryMinPeakDiscountPct ?? 0, athEntryOverrideEnabled: settings.athEntryOverride?.enabled ?? false, athEntryThresholdPct: settings.athEntryOverride?.thresholdPct ?? 60, athPeakCount: settings.athEntryOverride?.peakCount ?? 3, athPeakSpacingMonths: settings.athEntryOverride?.peakSpacingMonths ?? 3, athSourceFile: settings.athEntryOverride?.sourceFile };
 }
 
 function validateConfig(config: StrategyConfig): string | null {
@@ -195,7 +195,8 @@ export function BacktestPage() {
       setRuns((current) => current.filter((run) => run.id !== id));
       if (loadedRunID === id) { setResult(null); setLoadedRunID(null); }
       setPendingDeleteRunID(null);
-      setNotice("Saved backtest run deleted. Its source candle set was kept.");
+      setCandleSets((current) => current.filter((set) => set.id !== runs.find((run) => run.id === id)?.candleSetId));
+      setNotice("Saved backtest run deleted. Its linked candle set was removed if no other saved run used it.");
     } catch (deleteError) { setError(displayError(deleteError)); } finally { setDeletingRunID(null); }
   }
 
@@ -203,9 +204,12 @@ export function BacktestPage() {
     setError(null); setNotice(null); setIsDeletingAllRuns(true);
     try {
       await api.deleteAllBacktests();
-      setRuns([]); setPendingDeleteAllRuns(false);
+      const linkedCandleSetIDs = new Set(runs.map((run) => run.candleSetId));
+      setRuns([]); setCandleSets((current) => current.filter((set) => !linkedCandleSetIDs.has(set.id)));
+      if (selectedSetID && linkedCandleSetIDs.has(selectedSetID)) { setSelectedSetID(""); setStart(""); setEnd(""); }
+      setPendingDeleteAllRuns(false);
       if (loadedRunID) { setResult(null); setLoadedRunID(null); }
-      setNotice("All saved backtest runs were deleted. Historical candle sets were kept.");
+      setNotice("All saved backtest runs and their linked candle sets were deleted.");
     } catch (deleteError) { setError(displayError(deleteError)); } finally { setIsDeletingAllRuns(false); }
   }
 
@@ -266,7 +270,7 @@ export function BacktestPage() {
           </> : <button className="secondary-button danger-button" disabled={deletingRunID !== null} onClick={() => setPendingDeleteRunID(run.id)} type="button">Delete</button>}
         </div>
       </div>)}</div>)}
-      <p className="backtest-help">Delete removes saved simulation audit data. Delete all clears this archive only; imported candle sets are kept.</p>
+      <p className="backtest-help">Delete removes a saved simulation and its linked candle set once no other saved run uses it. Delete all removes all saved runs and their linked candle sets.</p>
     </section>
   </section>;
 }

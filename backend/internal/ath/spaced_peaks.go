@@ -17,12 +17,15 @@ type dailyHigh struct {
 }
 
 // AverageSpacedPeaksBefore returns the mean of the highest count daily highs
-// strictly before at, where each selected date is at least three calendar
-// months from every other selected date. The CSV must use the app's canonical
+// strictly before at, where each selected date is at least spacingMonths
+// calendar months from every other selected date. The CSV must use the app's canonical
 // timestamp,open,high,low,close,volume format.
-func AverageSpacedPeaksBefore(source string, at time.Time, count int) (float64, int, error) {
+func AverageSpacedPeaksBefore(source string, at time.Time, count, spacingMonths int) (float64, int, error) {
 	if count < 1 {
 		return 0, 0, fmt.Errorf("peak count must be at least 1")
+	}
+	if spacingMonths < 1 {
+		return 0, 0, fmt.Errorf("peak spacing must be at least 1 month")
 	}
 	path, err := resolveSource(source)
 	if err != nil {
@@ -56,7 +59,7 @@ func AverageSpacedPeaksBefore(source string, at time.Time, count int) (float64, 
 	for _, candidate := range candidates {
 		separate := true
 		for _, prior := range selected {
-			if !threeMonthsApart(candidate.at, prior.at) {
+			if !monthsApart(candidate.at, prior.at, spacingMonths) {
 				separate = false
 				break
 			}
@@ -78,11 +81,11 @@ func AverageSpacedPeaksBefore(source string, at time.Time, count int) (float64, 
 	return total / float64(len(selected)), len(selected), nil
 }
 
-func threeMonthsApart(a, b time.Time) bool {
+func monthsApart(a, b time.Time, months int) bool {
 	if a.After(b) {
 		a, b = b, a
 	}
-	return !b.Before(a.AddDate(0, 3, 0))
+	return !b.Before(a.AddDate(0, months, 0))
 }
 
 func resolveSource(source string) (string, error) {

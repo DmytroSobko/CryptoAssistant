@@ -3,10 +3,11 @@ package strategy
 import "fmt"
 
 type ATHEntryOverrideSettings struct {
-	Enabled      bool    `json:"enabled"`
-	ThresholdPct float64 `json:"thresholdPct"`
-	SourceFile   string  `json:"sourceFile"`
-	PeakCount    int     `json:"peakCount"`
+	Enabled           bool    `json:"enabled"`
+	ThresholdPct      float64 `json:"thresholdPct"`
+	SourceFile        string  `json:"sourceFile"`
+	PeakCount         int     `json:"peakCount"`
+	PeakSpacingMonths int     `json:"peakSpacingMonths"`
 }
 
 // ResolvedStrategyID maps configurations created before strategy selection to
@@ -98,6 +99,12 @@ func (settings AssetStrategySettings) Normalized() (AssetStrategySettings, error
 	}
 	if override.PeakCount < 1 || override.PeakCount > 20 {
 		return AssetStrategySettings{}, fmt.Errorf("historical peak count must be between 1 and 20")
+	}
+	if override.PeakSpacingMonths == 0 {
+		override.PeakSpacingMonths = 3
+	}
+	if override.PeakSpacingMonths < 1 || override.PeakSpacingMonths > 120 {
+		return AssetStrategySettings{}, fmt.Errorf("historical peak spacing must be between 1 and 120 months")
 	}
 	return AssetStrategySettings{SelectedStrategyID: selected, RecoveryBreakout: recovery, DipAccumulation: dip, ATHEntryOverride: override}, nil
 }
