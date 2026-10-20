@@ -1,8 +1,9 @@
-// Package backtestdata validates the v1 historical-candle CSV interchange
-// format. It has no database, HTTP, or provider dependency.
+// Package backtestdata validates and serializes the canonical historical-
+// candle interchange format. It has no database or HTTP dependency.
 package backtestdata
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/csv"
 	"encoding/hex"
@@ -22,6 +23,17 @@ var canonicalHeader = []string{"timestamp", "open", "high", "low", "close", "vol
 // returned candles retain the source's chronological order after it has been
 // proven strictly ascending with no missing UTC days.
 func ParseCSV(data []byte) ([]market.Candle, error) {
+	candles, err := parseCSV(data)
+	if err != nil {
+		return nil, err
+	}
+	if len(candles) < backtest.MinimumCandleCount {
+		return nil, fmt.Errorf("CSV requires at least %d daily candles", backtest.MinimumCandleCount)
+	}
+	return candles, nil
+}
+
+func parseCSV(data []byte) ([]market.Candle, error) {
 	reader := csv.NewReader(strings.NewReader(string(data)))
 	reader.FieldsPerRecord = len(canonicalHeader)
 	header, err := reader.Read()
@@ -52,13 +64,44 @@ func ParseCSV(data []byte) ([]market.Candle, error) {
 		}
 		candles = append(candles, candle)
 	}
-	if len(candles) < backtest.MinimumCandleCount {
-		return nil, fmt.Errorf("CSV requires at least %d daily candles", backtest.MinimumCandleCount)
-	}
-	if err := backtest.ValidateCandles(candles); err != nil {
-		return nil, fmt.Errorf("invalid CSV candles: %w", err)
+	if len(candles) > 0 {
+		if err := backtest.ValidateCandles(candles); err != nil {
+			return nil, fmt.Errorf("invalid CSV candles: %w", err)
+		}
 	}
 	return candles, nil
+}
+
+// EncodeCSV serializes candles using the canonical interchange format.
+func EncodeCSV(candles []market.Candle) ([]byte, error) {
+	if len(candles) > 0 {
+		if err := backtest.ValidateCandles(candles); err != nil {
+			return nil, fmt.Errorf("invalid candles: %w", err)
+		}
+	}
+	var buffer bytes.Buffer
+	writer := csv.NewWriter(&buffer)
+	if err := writer.Write(canonicalHeader); err != nil {
+		return nil, fmt.Errorf("write CSV header: %w", err)
+	}
+	for _, candle := range candles {
+		record := []string{
+			candle.Timestamp.UTC().Format(time.RFC3339),
+			strconv.FormatFloat(candle.Open, 'g', -1, 64),
+			strconv.FormatFloat(candle.High, 'g', -1, 64),
+			strconv.FormatFloat(candle.Low, 'g', -1, 64),
+			strconv.FormatFloat(candle.Close, 'g', -1, 64),
+			strconv.FormatFloat(candle.Volume, 'g', -1, 64),
+		}
+		if err := writer.Write(record); err != nil {
+			return nil, fmt.Errorf("write CSV candle: %w", err)
+		}
+	}
+	writer.Flush()
+	if err := writer.Error(); err != nil {
+		return nil, fmt.Errorf("write CSV: %w", err)
+	}
+	return buffer.Bytes(), nil
 }
 
 func parseRecord(record []string) (market.Candle, error) {

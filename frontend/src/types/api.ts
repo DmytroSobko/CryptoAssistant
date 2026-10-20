@@ -124,11 +124,9 @@ export interface BacktestCandleSet {
   importedAt: string;
 }
 
-export interface BacktestImportInput {
-  asset: AssetSymbol;
-  sourceLabel: string;
-  sourceFilename: string;
-  csv: string;
+export interface BacktestCandleRefresh {
+  candleSet: BacktestCandleSet;
+  addedCandles: number;
 }
 
 export interface HistoricalPeakSourceUpload {

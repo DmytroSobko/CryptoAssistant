@@ -41,5 +41,10 @@ h1, h2 { margin: 0; color: #f5f8fc; } h1 { font-size: 2rem; letter-spacing: -.04
 .settings-section .checkbox-field { line-height: 1.5; }
 .settings-section .checkbox-field input { flex: 0 0 auto; }
 @media (max-width: 900px) { .settings-grid { grid-template-columns: minmax(0, 1fr); } }
+.backtest-date-ranges { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 16px; }
+.range-toggle { padding: 7px 11px; border: 1px solid #344965; border-radius: 999px; color: #aebdd0; background: #0e1928; cursor: pointer; font-size: .78rem; font-weight: 600; }
+.range-toggle:hover:not(:disabled), .range-toggle--active { border-color: #47d7a4; color: #dff9ef; background: rgba(71, 215, 164, .12); }
+.range-toggle:disabled { cursor: default; opacity: .45; }
+.candle-set-list .candle-set { cursor: default; }
 @media (max-width: 1050px) { .backtest-metrics { grid-template-columns: repeat(2, minmax(145px, 1fr)); }.backtest-form-grid, .backtest-config-grid { grid-template-columns: repeat(2, minmax(170px, 1fr)); } }
 @media (max-width: 900px) { .backtest-import, .backtest-strategy-picker { grid-template-columns: 1fr; }.backtest-section-heading { align-items: start; flex-direction: column; }.backtest-fingerprint { max-width: none; text-align: left; }.saved-run { grid-template-columns: 1fr; }.saved-run > div:nth-child(2) { justify-items: start; } }

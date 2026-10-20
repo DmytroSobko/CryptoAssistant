@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/dmytrosobko/crypto-strategy-assistant/backend/internal/ath"
 	"github.com/dmytrosobko/crypto-strategy-assistant/backend/internal/market"
@@ -35,9 +34,6 @@ func Run(request Request, candles []market.Candle) (Result, error) {
 	}
 	if evaluationConfig.ATHPeakSpacingMonths == 0 {
 		evaluationConfig.ATHPeakSpacingMonths = 3
-	}
-	if evaluationConfig.ATHSourceFile == "" {
-		evaluationConfig.ATHSourceFile = fmt.Sprintf(".backtestdata/%s-usd-daily-10y-2016-09-30-to-2026-10-07.csv", strings.ToLower(request.Asset))
 	}
 	// Backtests know the fee assumption used at execution. Use it for the
 	// strategy's close-time break-even estimate as well; the next-open order is
@@ -71,7 +67,7 @@ func Run(request Request, candles []market.Candle) (Result, error) {
 
 		previousStrategyState := state.StrategyState
 		if evaluationConfig.ATHEntryOverrideEnabled || evaluationConfig.RecoveryEntryMinPeakDiscountPct > 0 {
-			peak, selected, peakErr := ath.AverageSpacedPeaksBefore(evaluationConfig.ATHSourceFile, candle.Timestamp, evaluationConfig.ATHPeakCount, evaluationConfig.ATHPeakSpacingMonths)
+			peak, selected, peakErr := ath.AverageSpacedCandlePeaksBefore(candles[:index], candle.Timestamp, evaluationConfig.ATHPeakCount, evaluationConfig.ATHPeakSpacingMonths)
 			if peakErr != nil {
 				return Result{}, peakErr
 			}

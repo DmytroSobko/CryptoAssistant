@@ -34,9 +34,21 @@ type RunRequest struct {
 	Request     backtest.Request
 }
 
-type Service struct{ store *storage.Store }
+type Service struct {
+	store   *storage.Store
+	managed *ManagedHistory
+}
 
 func New(store *storage.Store) *Service { return &Service{store: store} }
+
+func NewManaged(store *storage.Store, managed *ManagedHistory) *Service {
+	return &Service{store: store, managed: managed}
+}
+
+type RefreshResult struct {
+	CandleSet    storage.BacktestCandleSet `json:"candleSet"`
+	AddedCandles int                       `json:"addedCandles"`
+}
 
 func (s *Service) ImportCandleSet(ctx context.Context, request ImportRequest) (storage.BacktestCandleSet, error) {
 	asset := strings.ToUpper(strings.TrimSpace(request.Asset))
@@ -68,14 +80,45 @@ func (s *Service) ImportCandleSet(ctx context.Context, request ImportRequest) (s
 }
 
 func (s *Service) ListCandleSets(ctx context.Context, asset string) ([]storage.BacktestCandleSet, error) {
-	if normalized := strings.ToUpper(strings.TrimSpace(asset)); normalized != "" && normalized != "BTC" && normalized != "ETH" {
+	normalized := strings.ToUpper(strings.TrimSpace(asset))
+	if normalized != "" && normalized != "BTC" && normalized != "ETH" {
 		return nil, invalid(fmt.Errorf("asset must be BTC or ETH"))
+	}
+	if s.managed != nil {
+		assets := []string{normalized}
+		if normalized == "" {
+			assets = []string{"BTC", "ETH"}
+		}
+		sets := make([]storage.BacktestCandleSet, 0, len(assets))
+		for _, managedAsset := range assets {
+			set, err := s.managed.Current(ctx, managedAsset)
+			if err != nil {
+				return nil, err
+			}
+			sets = append(sets, set)
+		}
+		return sets, nil
 	}
 	sets, err := s.store.ListBacktestCandleSets(ctx, asset)
 	if err != nil {
 		return nil, err
 	}
 	return sets, nil
+}
+
+func (s *Service) RefreshManagedCandleSet(ctx context.Context, asset string) (RefreshResult, error) {
+	if s.managed == nil {
+		return RefreshResult{}, fmt.Errorf("managed backtest data is unavailable")
+	}
+	normalized := strings.ToUpper(strings.TrimSpace(asset))
+	if normalized != "BTC" && normalized != "ETH" {
+		return RefreshResult{}, invalid(fmt.Errorf("asset must be BTC or ETH"))
+	}
+	refresh, err := s.managed.Refresh(ctx, normalized)
+	if err != nil {
+		return RefreshResult{}, err
+	}
+	return RefreshResult{CandleSet: refresh.CandleSet, AddedCandles: refresh.AddedCandles}, nil
 }
 
 func (s *Service) DeleteCandleSet(ctx context.Context, id string) error {
@@ -160,8 +203,10 @@ func (s *Service) DeleteRun(ctx context.Context, id string) error {
 	if !deleted {
 		return fmt.Errorf("backtest run %q: %w", id, ErrNotFound)
 	}
-	if _, err := s.store.DeleteBacktestCandleSet(ctx, run.CandleSetID); err != nil && !errors.Is(err, storage.ErrBacktestCandleSetInUse) {
-		return err
+	if s.managed == nil {
+		if _, err := s.store.DeleteBacktestCandleSet(ctx, run.CandleSetID); err != nil && !errors.Is(err, storage.ErrBacktestCandleSetInUse) {
+			return err
+		}
 	}
 	return nil
 }
@@ -171,9 +216,11 @@ func (s *Service) DeleteAllRuns(ctx context.Context) (int64, error) {
 	if err != nil {
 		return 0, err
 	}
-	for _, candleSetID := range linked {
-		if _, err := s.store.DeleteBacktestCandleSet(ctx, candleSetID); err != nil && !errors.Is(err, storage.ErrBacktestCandleSetInUse) {
-			return 0, err
+	if s.managed == nil {
+		for _, candleSetID := range linked {
+			if _, err := s.store.DeleteBacktestCandleSet(ctx, candleSetID); err != nil && !errors.Is(err, storage.ErrBacktestCandleSetInUse) {
+				return 0, err
+			}
 		}
 	}
 	return count, nil

@@ -20,9 +20,10 @@ place orders, or execute trades.
   and allocation values.
 - Provides a dashboard, portfolio editor, history page, and independently
   configurable BTC and ETH strategy settings.
-- Provides a separate, local-only backtesting workspace. It imports immutable
-  BTC or ETH daily-candle CSV data and reports hypothetical strategy signals,
-  simulated fills, equity, drawdown, fees, and buy-and-hold comparison.
+- Provides a separate, local-only backtesting workspace. It maintains one
+  Coinbase daily-candle series per currency in SQLite and reports hypothetical
+  strategy signals, simulated fills, equity, drawdown, fees, and buy-and-hold
+  comparison.
 
 ## Important decision rule
 
@@ -135,17 +136,20 @@ stages until the position closes and a fresh cycle begins.
 
 ### Backtests
 
-The **Backtests** page is separate from the Dashboard and History. It imports
-one BTC or ETH historical candle set, runs one asset at a time, and previews a
-result. Click **Save run** to keep it in the collapsible saved-runs archive.
+The **Backtests** page is separate from the Dashboard and History. On launch,
+the app creates one BTC and one ETH daily-candle series in SQLite when needed,
+fills them with the maximum available completed Coinbase history, runs one
+asset at a time, and previews a result. Click **Save run** to keep it in the
+collapsible saved-runs archive.
 A backtest never reads or changes the live portfolio, live
 strategy state, live advisory History, or live market snapshots.
 
-Choose a CSV file and give it a meaningful source label, such as `Coinbase
-daily export`. After import, select its date range, starting cash, fees,
-slippage, and a run-local strategy. It defaults to the asset's currently
-selected assistance strategy, but you may choose either strategy for a test;
-that choice and all snapshot edits do not save or overwrite the live BTC/ETH
+Use **Refresh candles** to append missing completed UTC days through yesterday.
+Choose a date range manually or use the 0.5, 1, 2, 5, 10 year, and Max quick
+ranges, then set starting cash, fees, slippage, and a run-local strategy. It
+defaults to the asset's currently selected assistance strategy, but you may
+choose either strategy for a test; that choice and all snapshot edits do not
+save or overwrite the live BTC/ETH
 strategy configuration. For Dip Accumulation, the first-entry reference is the
 actual simulated Entry 1 fill. A later drawdown sale is shown as
 `REJECTED BREAK EVEN FLOOR` if the simulated next-open net proceeds are below
@@ -156,15 +160,10 @@ assumptions, summary metrics, daily-close equity curve, every signal, and
 every simulated trade. Rejected orders and end-of-data signals are retained in
 the audit trail rather than being hidden.
 
-#### Historical CSV format
+#### Historical data format
 
-Version 1 accepts a single asset per canonical CSV file with this exact
-header:
-
-```csv
-timestamp,open,high,low,close,volume
-2022-01-01T00:00:00Z,47686.81,47759.63,46288.49,47733.43,196.0
-```
+Managed candles are stored in SQLite with the asset, timestamp, open, high,
+low, close, and volume fields. The asset and timestamp identify a unique day.
 
 Requirements:
 
@@ -172,14 +171,13 @@ Requirements:
 - Every UTC day must be present. Duplicate, unsorted, or missing days are
   rejected rather than filled in.
 - `open`, `high`, `low`, and `close` must be finite positive values with a
-  valid OHLC relationship. `volume` may be blank; when supplied it must be a
-  finite non-negative value.
+  valid OHLC relationship. `volume` must be a finite non-negative value.
 - At least 201 contiguous daily candles are required: 200 for SMA200 warm-up
   and at least one decision candle.
 
-The import stores the original file's SHA-256, filename (without its local
-path), source label, schema version, range, and candle count. A run also saves
-a fingerprint of its selected candle values and range, so later data imports
+The current managed series tracks its fingerprint, schema version, range, and
+candle count. Every saved run retains its result and a fingerprint of its
+selected candle values, so later refreshes
 cannot revise its historical result.
 
 #### Simulation assumptions
@@ -206,8 +204,8 @@ cannot revise its historical result.
 - `ProfitTrigger2Pct` is retained only for compatibility with older snapshots.
   It has no sell rule and is not editable or validated.
 
-Example walkthrough: import a validated BTC daily CSV, select the imported
-set, leave the initial USD 10,000 / 10 bps / 5 bps defaults or enter explicit
+Example walkthrough: select BTC, refresh its managed history, leave the
+initial USD 10,000 / 10 bps / 5 bps defaults or enter explicit
 alternatives, set an in-range period with the required warm-up, then select
 **Run backtest**. Inspect the preview's fingerprint, assumptions, signals
 and fills before comparing the reported return with buy-and-hold. These are
@@ -227,8 +225,8 @@ recommendation.
 | `PUT` | `/api/config/{asset}` | Validated settings for BTC or ETH |
 | `GET` | `/api/strategy-settings` | Full selected strategy profile for BTC and ETH |
 | `PUT` | `/api/strategy-settings/{asset}` | Save one asset's selected strategy and both configurations |
-| `POST` | `/api/backtest/candle-sets` | Import a validated historical CSV as an immutable candle set |
-| `GET` | `/api/backtest/candle-sets?asset=BTC` | List imported BTC or ETH candle sets |
+| `GET` | `/api/backtest/candle-sets?asset=BTC` | Get the current managed BTC or ETH database series |
+| `POST` | `/api/backtest/candle-sets/refresh` | Insert missing completed Coinbase days into one managed series |
 | `POST` | `/api/backtests` | Run and save a synchronous hypothetical simulation |
 | `POST` | `/api/backtests/preview` | Run a simulation without saving it |
 | `GET` | `/api/backtests` | List saved backtest summaries |

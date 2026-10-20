@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/dmytrosobko/crypto-strategy-assistant/backend/internal/api"
+	"github.com/dmytrosobko/crypto-strategy-assistant/backend/internal/backtestservice"
 	"github.com/dmytrosobko/crypto-strategy-assistant/backend/internal/config"
 	"github.com/dmytrosobko/crypto-strategy-assistant/backend/internal/market/coinbase"
 	"github.com/dmytrosobko/crypto-strategy-assistant/backend/internal/marketdata"
@@ -27,14 +28,17 @@ func main() {
 	if err := store.Migrate(cfg.MigrationsDir); err != nil {
 		log.Fatalf("run migrations: %v", err)
 	}
-	refresher := marketdata.NewRefresher(coinbase.NewProvider(nil, cfg.MarketDataBaseURL), store)
+	provider := coinbase.NewProvider(nil, cfg.MarketDataBaseURL)
+	refresher := marketdata.NewRefresher(provider, store)
+	managedBacktestData := backtestservice.NewManagedHistory(store, provider)
 	refreshContext, cancelRefresh := context.WithCancel(context.Background())
 	defer cancelRefresh()
 	go refreshMarketData(refreshContext, refresher, cfg.MarketRefreshInterval)
+	go initializeBacktestData(refreshContext, managedBacktestData)
 
 	server := &http.Server{
 		Addr:              cfg.APIAddr,
-		Handler:           api.NewServer(store, cfg, refresher).Routes(),
+		Handler:           api.NewServerWithManagedBacktestData(store, cfg, refresher, managedBacktestData).Routes(),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
@@ -53,6 +57,12 @@ func main() {
 	defer cancel()
 	if err := server.Shutdown(ctx); err != nil {
 		log.Printf("shutdown API: %v", err)
+	}
+}
+
+func initializeBacktestData(ctx context.Context, managed *backtestservice.ManagedHistory) {
+	if err := managed.Initialize(ctx); err != nil {
+		log.Printf("initialize managed backtest data: %v", err)
 	}
 }
 

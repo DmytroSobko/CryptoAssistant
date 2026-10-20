@@ -67,20 +67,46 @@ func (p *Provider) GetCurrentPrice(symbol string) (float64, error) {
 // GetDailyCandles requests calendar-day candles and removes today's unclosed
 // candle. Returned data is chronological and contains only completed UTC days.
 func (p *Provider) GetDailyCandles(symbol string, limit int) ([]market.Candle, error) {
-	product, err := productFor(symbol)
-	if err != nil {
-		return nil, err
-	}
 	if limit < 1 || limit > maxDailyLimit {
 		return nil, fmt.Errorf("daily candle limit must be between 1 and %d", maxDailyLimit)
 	}
 
 	now := p.now().UTC()
 	dayStart := now.Truncate(24 * time.Hour)
+	candles, err := p.GetDailyCandlesRange(symbol, dayStart.AddDate(0, 0, -limit), dayStart)
+	if err != nil {
+		return nil, err
+	}
+	if len(candles) > limit {
+		candles = candles[len(candles)-limit:]
+	}
+	if len(candles) == 0 {
+		return nil, fmt.Errorf("provider returned no completed daily candles")
+	}
+	return candles, nil
+}
+
+// GetDailyCandlesRange retrieves up to 300 completed UTC daily candles in
+// [start, end). Coinbase limits a single candles request to 300 buckets, so
+// callers that need a longer history must page through adjacent ranges.
+func (p *Provider) GetDailyCandlesRange(symbol string, start, end time.Time) ([]market.Candle, error) {
+	product, err := productFor(symbol)
+	if err != nil {
+		return nil, err
+	}
+	start = start.UTC().Truncate(24 * time.Hour)
+	end = end.UTC().Truncate(24 * time.Hour)
+	if !start.Before(end) {
+		return nil, fmt.Errorf("daily candle range start must be before end")
+	}
+	if days := int(end.Sub(start) / (24 * time.Hour)); days > maxDailyLimit {
+		return nil, fmt.Errorf("daily candle range cannot exceed %d days", maxDailyLimit)
+	}
+
 	query := url.Values{
 		"granularity": {"86400"},
-		"start":       {dayStart.AddDate(0, 0, -limit).Format(time.RFC3339)},
-		"end":         {now.Format(time.RFC3339)},
+		"start":       {start.Format(time.RFC3339)},
+		"end":         {end.Format(time.RFC3339)},
 	}
 	var rows [][]json.RawMessage
 	if err := p.getJSON("/products/"+product+"/candles", query, &rows); err != nil {
@@ -93,18 +119,12 @@ func (p *Provider) GetDailyCandles(symbol string, limit int) ([]market.Candle, e
 		if err != nil {
 			return nil, fmt.Errorf("decode %s daily candle: %w", symbol, err)
 		}
-		if !candle.Timestamp.Before(dayStart) {
+		if candle.Timestamp.Before(start) || !candle.Timestamp.Before(end) || !candle.Timestamp.Before(p.now().UTC().Truncate(24*time.Hour)) {
 			continue
 		}
 		candles = append(candles, candle)
 	}
 	sort.Slice(candles, func(i, j int) bool { return candles[i].Timestamp.Before(candles[j].Timestamp) })
-	if len(candles) > limit {
-		candles = candles[len(candles)-limit:]
-	}
-	if len(candles) == 0 {
-		return nil, fmt.Errorf("provider returned no completed daily candles")
-	}
 	return candles, nil
 }
 

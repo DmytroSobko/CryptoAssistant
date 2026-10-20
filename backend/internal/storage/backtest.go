@@ -87,6 +87,112 @@ func (s *Store) ImportBacktestCandleSet(ctx context.Context, set BacktestCandleS
 	return set, nil
 }
 
+// ReplaceManagedBacktestCandleSet creates or rebuilds one stable database
+// series per asset. Saved run results remain immutable;
+// they retain their own selected-data fingerprint and audit rows.
+func (s *Store) ReplaceManagedBacktestCandleSet(ctx context.Context, set BacktestCandleSet, candles []market.Candle) (BacktestCandleSet, error) {
+	asset, err := marketAsset(set.Asset)
+	if err != nil {
+		return BacktestCandleSet{}, err
+	}
+	if err := validateBacktestSetInput(set, candles); err != nil {
+		return BacktestCandleSet{}, err
+	}
+	set = BacktestCandleSet{
+		ID: "managed-" + strings.ToLower(asset), Asset: asset,
+		SourceLabel: strings.TrimSpace(set.SourceLabel), SourceFilename: filepath.Base(strings.TrimSpace(set.SourceFilename)),
+		OriginalSHA256: strings.ToLower(set.OriginalSHA256), SchemaVersion: backtestCandleSchemaVersion,
+		CandleCount: len(candles), FirstTimestamp: candles[0].Timestamp, LastTimestamp: candles[len(candles)-1].Timestamp,
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return BacktestCandleSet{}, fmt.Errorf("begin managed backtest candle-set replacement: %w", err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `INSERT INTO backtest_candle_sets(id, asset, source_label, source_filename, original_sha256, schema_version, candle_count, first_timestamp, last_timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET asset = excluded.asset, source_label = excluded.source_label, source_filename = excluded.source_filename, original_sha256 = excluded.original_sha256, schema_version = excluded.schema_version, candle_count = excluded.candle_count, first_timestamp = excluded.first_timestamp, last_timestamp = excluded.last_timestamp, imported_at = CURRENT_TIMESTAMP`, set.ID, set.Asset, set.SourceLabel, set.SourceFilename, set.OriginalSHA256, set.SchemaVersion, set.CandleCount, databaseTime(set.FirstTimestamp), databaseTime(set.LastTimestamp)); err != nil {
+		return BacktestCandleSet{}, fmt.Errorf("upsert managed backtest candle set: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM backtest_candles WHERE candle_set_id = ?`, set.ID); err != nil {
+		return BacktestCandleSet{}, fmt.Errorf("replace managed backtest candles: %w", err)
+	}
+	statement, err := tx.PrepareContext(ctx, `INSERT INTO backtest_candles(candle_set_id, timestamp, open, high, low, close, volume) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+	if err != nil {
+		return BacktestCandleSet{}, fmt.Errorf("prepare managed backtest candles: %w", err)
+	}
+	defer statement.Close()
+	for _, candle := range candles {
+		if _, err := statement.ExecContext(ctx, set.ID, databaseTime(candle.Timestamp), candle.Open, candle.High, candle.Low, candle.Close, candle.Volume); err != nil {
+			return BacktestCandleSet{}, fmt.Errorf("insert managed backtest candle: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return BacktestCandleSet{}, fmt.Errorf("commit managed backtest candle-set replacement: %w", err)
+	}
+	set.ImportedAt, err = s.backtestCandleSetImportedAt(ctx, set.ID)
+	if err != nil {
+		return BacktestCandleSet{}, err
+	}
+	return set, nil
+}
+
+// AppendManagedBacktestCandles adds only dates after the current managed
+// series and updates its metadata in the same transaction.
+func (s *Store) AppendManagedBacktestCandles(ctx context.Context, asset string, candles []market.Candle, digest string) (BacktestCandleSet, error) {
+	asset, err := marketAsset(asset)
+	if err != nil {
+		return BacktestCandleSet{}, err
+	}
+	if len(candles) == 0 {
+		set, err := s.GetBacktestCandleSetMetadata(ctx, "managed-"+strings.ToLower(asset))
+		return set, err
+	}
+	if err := backtest.ValidateCandles(candles); err != nil {
+		return BacktestCandleSet{}, fmt.Errorf("invalid appended backtest candles: %w", err)
+	}
+	if len(digest) != 64 {
+		return BacktestCandleSet{}, fmt.Errorf("managed backtest SHA-256 must be 64 hexadecimal characters")
+	}
+	if _, err := hex.DecodeString(digest); err != nil {
+		return BacktestCandleSet{}, fmt.Errorf("managed backtest SHA-256 must be hexadecimal: %w", err)
+	}
+	id := "managed-" + strings.ToLower(asset)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return BacktestCandleSet{}, fmt.Errorf("begin managed backtest candle append: %w", err)
+	}
+	defer tx.Rollback()
+	var previousLast string
+	if err := tx.QueryRowContext(ctx, `SELECT last_timestamp FROM backtest_candle_sets WHERE id = ? AND asset = ?`, id, asset).Scan(&previousLast); err != nil {
+		return BacktestCandleSet{}, fmt.Errorf("read managed backtest candle set: %w", err)
+	}
+	last, err := parseDatabaseTime(previousLast)
+	if err != nil {
+		return BacktestCandleSet{}, fmt.Errorf("parse managed backtest last timestamp: %w", err)
+	}
+	if !candles[0].Timestamp.Equal(last.AddDate(0, 0, 1)) {
+		return BacktestCandleSet{}, fmt.Errorf("managed candles must begin on the day after the stored series")
+	}
+	statement, err := tx.PrepareContext(ctx, `INSERT INTO backtest_candles(candle_set_id, timestamp, open, high, low, close, volume) VALUES (?, ?, ?, ?, ?, ?, ?)`)
+	if err != nil {
+		return BacktestCandleSet{}, fmt.Errorf("prepare managed backtest candle append: %w", err)
+	}
+	defer statement.Close()
+	for _, candle := range candles {
+		if _, err := statement.ExecContext(ctx, id, databaseTime(candle.Timestamp), candle.Open, candle.High, candle.Low, candle.Close, candle.Volume); err != nil {
+			return BacktestCandleSet{}, fmt.Errorf("append managed backtest candle: %w", err)
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE backtest_candle_sets SET original_sha256 = ?, candle_count = candle_count + ?, last_timestamp = ?, imported_at = CURRENT_TIMESTAMP WHERE id = ?`, strings.ToLower(digest), len(candles), databaseTime(candles[len(candles)-1].Timestamp), id); err != nil {
+		return BacktestCandleSet{}, fmt.Errorf("update managed backtest candle-set metadata: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return BacktestCandleSet{}, fmt.Errorf("commit managed backtest candle append: %w", err)
+	}
+	set, err := s.GetBacktestCandleSetMetadata(ctx, id)
+	return set, err
+}
+
 func (s *Store) ListBacktestCandleSets(ctx context.Context, asset string) ([]BacktestCandleSet, error) {
 	query := `SELECT id, asset, source_label, source_filename, original_sha256, schema_version, candle_count, first_timestamp, last_timestamp, imported_at FROM backtest_candle_sets`
 	args := []any{}
@@ -152,8 +258,7 @@ func (s *Store) DeleteBacktestCandleSet(ctx context.Context, id string) (bool, e
 }
 
 func (s *Store) GetBacktestCandleSet(ctx context.Context, id string) (BacktestCandleSet, []market.Candle, error) {
-	row := s.db.QueryRowContext(ctx, `SELECT id, asset, source_label, source_filename, original_sha256, schema_version, candle_count, first_timestamp, last_timestamp, imported_at FROM backtest_candle_sets WHERE id = ?`, id)
-	set, err := scanBacktestCandleSet(row)
+	set, err := s.GetBacktestCandleSetMetadata(ctx, id)
 	if err != nil {
 		return BacktestCandleSet{}, nil, err
 	}
@@ -189,6 +294,11 @@ func (s *Store) GetBacktestCandleSet(ctx context.Context, id string) (BacktestCa
 		return BacktestCandleSet{}, nil, fmt.Errorf("stored backtest candle set %s is invalid: %w", id, err)
 	}
 	return set, candles, nil
+}
+
+func (s *Store) GetBacktestCandleSetMetadata(ctx context.Context, id string) (BacktestCandleSet, error) {
+	row := s.db.QueryRowContext(ctx, `SELECT id, asset, source_label, source_filename, original_sha256, schema_version, candle_count, first_timestamp, last_timestamp, imported_at FROM backtest_candle_sets WHERE id = ?`, id)
+	return scanBacktestCandleSet(row)
 }
 
 type backtestCandleSetScanner interface{ Scan(...any) error }

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strconv"
@@ -33,6 +34,10 @@ type createBacktestInput struct {
 	ExecutionModel  string          `json:"executionModel"`
 }
 
+type refreshBacktestCandleSetInput struct {
+	Asset string `json:"asset"`
+}
+
 func (s *Server) handleImportBacktestCandleSet(w http.ResponseWriter, r *http.Request) {
 	var input importBacktestCandleSetInput
 	if err := decodeJSONLimit(r, &input, maxBacktestCSVBytes); err != nil {
@@ -54,6 +59,26 @@ func (s *Server) handleListBacktestCandleSets(w http.ResponseWriter, r *http.Req
 		return
 	}
 	writeJSON(w, http.StatusOK, sets)
+}
+
+func (s *Server) handleRefreshBacktestCandleSet(w http.ResponseWriter, r *http.Request) {
+	var input refreshBacktestCandleSetInput
+	if err := decodeJSON(r, &input); err != nil {
+		writeDecodeError(w, err)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
+	defer cancel()
+	result, err := s.backtestService.RefreshManagedCandleSet(ctx, input.Asset)
+	if err != nil {
+		if errors.Is(err, backtestservice.ErrInvalid) {
+			writeBacktestError(w, err)
+		} else {
+			writeError(w, http.StatusBadGateway, "could not refresh Coinbase candle history; existing database candles were kept")
+		}
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (s *Server) handleDeleteBacktestCandleSet(w http.ResponseWriter, r *http.Request) {

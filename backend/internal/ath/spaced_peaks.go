@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/dmytrosobko/crypto-strategy-assistant/backend/internal/market"
 )
 
 type dailyHigh struct {
@@ -54,6 +56,28 @@ func AverageSpacedPeaksBefore(source string, at time.Time, count, spacingMonths 
 			candidates = append(candidates, dailyHigh{day, high})
 		}
 	}
+	return averageSpacedCandidates(candidates, count, spacingMonths)
+}
+
+// AverageSpacedCandlePeaksBefore calculates the same time-aware peak average
+// directly from the database-backed candle series used by a backtest.
+func AverageSpacedCandlePeaksBefore(candles []market.Candle, at time.Time, count, spacingMonths int) (float64, int, error) {
+	if count < 1 {
+		return 0, 0, fmt.Errorf("peak count must be at least 1")
+	}
+	if spacingMonths < 1 {
+		return 0, 0, fmt.Errorf("peak spacing must be at least 1 month")
+	}
+	candidates := make([]dailyHigh, 0, len(candles))
+	for _, candle := range candles {
+		if candle.Timestamp.Before(at) && candle.High > 0 {
+			candidates = append(candidates, dailyHigh{at: candle.Timestamp, high: candle.High})
+		}
+	}
+	return averageSpacedCandidates(candidates, count, spacingMonths)
+}
+
+func averageSpacedCandidates(candidates []dailyHigh, count, spacingMonths int) (float64, int, error) {
 	sort.Slice(candidates, func(i, j int) bool { return candidates[i].high > candidates[j].high })
 	selected := make([]dailyHigh, 0, count)
 	for _, candidate := range candidates {

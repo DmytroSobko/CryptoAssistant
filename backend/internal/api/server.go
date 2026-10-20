@@ -38,6 +38,10 @@ func NewServer(store *storage.Store, cfg config.Config, marketRefresher MarketRe
 	return &Server{store: store, cfg: cfg, marketRefresher: marketRefresher, strategyService: strategyservice.New(store), backtestService: backtestservice.New(store)}
 }
 
+func NewServerWithManagedBacktestData(store *storage.Store, cfg config.Config, marketRefresher MarketRefresher, managed *backtestservice.ManagedHistory) *Server {
+	return &Server{store: store, cfg: cfg, marketRefresher: marketRefresher, strategyService: strategyservice.New(store), backtestService: backtestservice.NewManaged(store, managed)}
+}
+
 func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.handleHealth)
@@ -55,6 +59,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /api/historical-peak-sources", s.handleUploadHistoricalPeakSource)
 	mux.HandleFunc("POST /api/backtest/candle-sets", s.handleImportBacktestCandleSet)
 	mux.HandleFunc("GET /api/backtest/candle-sets", s.handleListBacktestCandleSets)
+	mux.HandleFunc("POST /api/backtest/candle-sets/refresh", s.handleRefreshBacktestCandleSet)
 	mux.HandleFunc("DELETE /api/backtest/candle-sets/{id}", s.handleDeleteBacktestCandleSet)
 	mux.HandleFunc("POST /api/backtests", s.handleCreateBacktest)
 	mux.HandleFunc("POST /api/backtests/preview", s.handlePreviewBacktest)

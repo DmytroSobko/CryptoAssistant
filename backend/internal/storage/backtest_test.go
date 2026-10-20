@@ -141,6 +141,51 @@ func TestBacktestCandleSetDuplicateAndInvalidInputDoNotPersistRows(t *testing.T)
 	}
 }
 
+func TestManagedBacktestCandleSetUsesStableIDAndPreservesSavedRun(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "assistant.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if err := store.Migrate("../../migrations"); err != nil {
+		t.Fatal(err)
+	}
+	candles := backtestCandles(backtest.MinimumCandleCount)
+	setInput := BacktestCandleSet{Asset: "BTC", SourceLabel: "Coinbase Exchange API (managed)", SourceFilename: "btc-usd-daily.csv", OriginalSHA256: strings.Repeat("e", 64)}
+	set, err := store.ReplaceManagedBacktestCandleSet(context.Background(), setInput, candles)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if set.ID != "managed-btc" {
+		t.Fatalf("managed set ID=%q, want managed-btc", set.ID)
+	}
+	request := backtest.Request{Asset: "BTC", Start: candles[199].Timestamp, End: candles[200].Timestamp, StartingCashUSD: 1000, StrategyConfig: storageBacktestConfig(), FeeBps: 10, SlippageBps: 5, ExecutionModel: backtest.ExecutionModelNextDailyOpen}
+	result, err := backtest.Run(request, candles)
+	if err != nil {
+		t.Fatal(err)
+	}
+	run, err := store.SaveBacktestRun(context.Background(), set.ID, result)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	updatedCandles := backtestCandles(backtest.MinimumCandleCount + 1)
+	updated, err := store.AppendManagedBacktestCandles(context.Background(), "BTC", updatedCandles[len(updatedCandles)-1:], strings.Repeat("f", 64))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.ID != set.ID || updated.CandleCount != len(updatedCandles) {
+		t.Fatalf("updated managed set=%+v", updated)
+	}
+	loadedRun, err := store.GetBacktestRun(context.Background(), run.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(loadedRun.Result, result) {
+		t.Fatal("managed candle refresh changed the saved run result")
+	}
+}
+
 func TestBacktestRunRoundTripAndAssetMismatchAreIsolated(t *testing.T) {
 	store, err := Open(filepath.Join(t.TempDir(), "assistant.db"))
 	if err != nil {
