@@ -28,18 +28,17 @@ type MarketRefresher interface {
 
 type Server struct {
 	store           *storage.Store
-	cfg             config.Config
 	marketRefresher MarketRefresher
 	strategyService *strategyservice.Service
 	backtestService *backtestservice.Service
 }
 
-func NewServer(store *storage.Store, cfg config.Config, marketRefresher MarketRefresher) *Server {
-	return &Server{store: store, cfg: cfg, marketRefresher: marketRefresher, strategyService: strategyservice.New(store), backtestService: backtestservice.New(store)}
+func NewServer(store *storage.Store, _ config.Config, marketRefresher MarketRefresher) *Server {
+	return &Server{store: store, marketRefresher: marketRefresher, strategyService: strategyservice.New(store), backtestService: backtestservice.New(store)}
 }
 
-func NewServerWithManagedBacktestData(store *storage.Store, cfg config.Config, marketRefresher MarketRefresher, managed *backtestservice.ManagedHistory) *Server {
-	return &Server{store: store, cfg: cfg, marketRefresher: marketRefresher, strategyService: strategyservice.New(store), backtestService: backtestservice.NewManaged(store, managed)}
+func NewServerWithManagedBacktestData(store *storage.Store, _ config.Config, marketRefresher MarketRefresher, managed *backtestservice.ManagedHistory) *Server {
+	return &Server{store: store, marketRefresher: marketRefresher, strategyService: strategyservice.New(store), backtestService: backtestservice.NewManaged(store, managed)}
 }
 
 func (s *Server) Routes() http.Handler {
@@ -56,7 +55,6 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("PUT /api/config/{asset}", s.handlePutConfig)
 	mux.HandleFunc("GET /api/strategy-settings", s.handleGetStrategySettings)
 	mux.HandleFunc("PUT /api/strategy-settings/{asset}", s.handlePutStrategySettings)
-	mux.HandleFunc("POST /api/historical-peak-sources", s.handleUploadHistoricalPeakSource)
 	mux.HandleFunc("POST /api/backtest/candle-sets", s.handleImportBacktestCandleSet)
 	mux.HandleFunc("GET /api/backtest/candle-sets", s.handleListBacktestCandleSets)
 	mux.HandleFunc("POST /api/backtest/candle-sets/refresh", s.handleRefreshBacktestCandleSet)

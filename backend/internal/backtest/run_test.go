@@ -133,7 +133,6 @@ func TestRunATHOverrideDoesNotUseSameDayOrFutureHigh(t *testing.T) {
 	request := fixtureRequest(candles, 199, len(candles)-1)
 	request.StrategyConfig.ATHEntryOverrideEnabled = true
 	request.StrategyConfig.ATHEntryThresholdPct = 60
-	request.StrategyConfig.ATHSourceFile = "/does/not/exist.csv"
 
 	result, err := Run(request, candles)
 	if err != nil {

@@ -1,4 +1,4 @@
-import { ChangeEvent, FormEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { AssetStrategySettings, AssetSymbol, StrategyConfig, StrategyID } from "../types/api";
 
@@ -20,7 +20,7 @@ interface ProfileForm {
   selectedStrategyId: StrategyID;
   recoveryBreakout: ConfigForm;
   dipAccumulation: ConfigForm;
-  athEntryOverride: { enabled: boolean; thresholdPct: string; sourceFile: string; peakCount: string; peakSpacingMonths: string };
+  athEntryOverride: { enabled: boolean; thresholdPct: string; peakCount: string; peakSpacingMonths: string };
 }
 
 interface FieldDefinition {
@@ -87,7 +87,7 @@ function formFromSettings(settings: AssetStrategySettings): ProfileForm {
     selectedStrategyId: settings.selectedStrategyId,
     recoveryBreakout: formFromConfig(settings.recoveryBreakout),
     dipAccumulation: formFromConfig(settings.dipAccumulation),
-    athEntryOverride: { enabled: settings.athEntryOverride?.enabled ?? false, thresholdPct: String(settings.athEntryOverride?.thresholdPct ?? 60), sourceFile: settings.athEntryOverride?.sourceFile ?? ".backtestdata/btc-usd-daily-10y-2016-09-30-to-2026-10-07.csv", peakCount: String(settings.athEntryOverride?.peakCount ?? 3), peakSpacingMonths: String(settings.athEntryOverride?.peakSpacingMonths ?? 3) },
+    athEntryOverride: { enabled: settings.athEntryOverride?.enabled ?? false, thresholdPct: String(settings.athEntryOverride?.thresholdPct ?? 60), peakCount: String(settings.athEntryOverride?.peakCount ?? 3), peakSpacingMonths: String(settings.athEntryOverride?.peakSpacingMonths ?? 3) },
   };
 }
 
@@ -143,7 +143,7 @@ function settingsFromForm(form: ProfileForm): AssetStrategySettings {
     selectedStrategyId: form.selectedStrategyId,
     recoveryBreakout: configFromForm(form.recoveryBreakout, "RECOVERY_BREAKOUT"),
     dipAccumulation: configFromForm(form.dipAccumulation, "DIP_ACCUMULATION"),
-	athEntryOverride: { enabled: form.athEntryOverride.enabled, thresholdPct, sourceFile: form.athEntryOverride.sourceFile.trim(), peakCount, peakSpacingMonths },
+	athEntryOverride: { enabled: form.athEntryOverride.enabled, thresholdPct, peakCount, peakSpacingMonths },
   };
 }
 
@@ -157,9 +157,7 @@ export function StrategySettingsPage() {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [isUploadingPeakSource, setIsUploadingPeakSource] = useState(false);
   const [saved, setSaved] = useState(false);
-  const peakSourceFileInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     let active = true;
@@ -196,17 +194,6 @@ export function StrategySettingsPage() {
   const selectStrategy = (selectedStrategyId: StrategyID) => { setForms((current) => current[selectedAsset] ? { ...current, [selectedAsset]: { ...current[selectedAsset]!, selectedStrategyId } } : current); setError(null); setSaved(false); };
   const updateATHOverride = (change: Partial<ProfileForm["athEntryOverride"]>) => setForms((current) => current[selectedAsset] ? { ...current, [selectedAsset]: { ...current[selectedAsset]!, athEntryOverride: { ...current[selectedAsset]!.athEntryOverride, ...change } } } : current);
 
-  async function uploadPeakSource(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    setError(null); setSaved(false); setIsUploadingPeakSource(true);
-    try {
-      const upload = await api.uploadHistoricalPeakSource(selectedAsset, file.name, await file.text());
-      updateATHOverride({ sourceFile: upload.sourceFile });
-    } catch (uploadError) { setError(uploadError instanceof Error ? uploadError.message : "Could not store the historical peak source."); }
-    finally { setIsUploadingPeakSource(false); if (peakSourceFileInput.current) peakSourceFileInput.current.value = ""; }
-  }
-
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!profile) return;
@@ -223,7 +210,7 @@ export function StrategySettingsPage() {
     <header className="page-header"><div><p className="eyebrow">Deterministic rules</p><h1>Strategy settings</h1></div><p className="page-note">Changes affect future advisory evaluations only. They never execute a trade.</p></header>
     <div aria-label="Asset settings" className="asset-tabs" role="tablist">{(["BTC", "ETH"] as AssetSymbol[]).map((asset) => <button aria-selected={selectedAsset === asset} className={selectedAsset === asset ? "asset-tab asset-tab--active" : "asset-tab"} key={asset} onClick={() => selectAsset(asset)} role="tab" type="button">{asset}</button>)}</div>
     <form className="settings-form" onSubmit={save}>
-      <section className="settings-section"><h2>Historical-peak entry override</h2><p className="settings-help">On a fresh cycle, Entry 1 is allowed at the selected percentage of the average of the highest spaced peaks before that day.</p><label className="checkbox-field"><input checked={profile.athEntryOverride.enabled} onChange={(event) => updateATHOverride({ enabled: event.target.checked })} type="checkbox" /> Enable historical-peak entry for {selectedAsset}</label><label className="field"><span>Historical daily CSV source</span><input readOnly value={profile.athEntryOverride.sourceFile} /></label><label className="field"><span>Choose daily CSV file</span><input accept=".csv,text/csv" disabled={!profile.athEntryOverride.enabled || isUploadingPeakSource} onChange={uploadPeakSource} ref={peakSourceFileInput} type="file" /><small>{isUploadingPeakSource ? "Copying and validating source…" : "The app stores a content-addressed copy, so later changes to the original file cannot alter this rule."}</small></label><label className="field"><span>Peaks to average (at least {profile.athEntryOverride.peakSpacingMonths || 3} months apart)</span><input disabled={!profile.athEntryOverride.enabled} max="20" min="1" onChange={(event) => updateATHOverride({ peakCount: event.target.value })} step="1" type="number" value={profile.athEntryOverride.peakCount} /></label><label className="field"><span>Minimum months between peaks</span><input disabled={!profile.athEntryOverride.enabled} max="120" min="1" onChange={(event) => updateATHOverride({ peakSpacingMonths: event.target.value })} step="1" type="number" value={profile.athEntryOverride.peakSpacingMonths} /></label><label className="field"><span>Buy at or below (% of peak average)</span><input aria-label="Historical-peak entry threshold" disabled={!profile.athEntryOverride.enabled} max="100" min="0.0001" onChange={(event) => updateATHOverride({ thresholdPct: event.target.value })} step="any" type="number" value={profile.athEntryOverride.thresholdPct} /></label><p className="settings-disclosure">The selected file must use timestamp, open, high, low, close, volume columns. Only peaks dated before the signal day are used.</p></section>
+      <section className="settings-section"><h2>Historical-peak entry override</h2><p className="settings-help">On a fresh cycle, Entry 1 is allowed at the selected percentage of the average of the highest spaced peaks before that day.</p><label className="checkbox-field"><input checked={profile.athEntryOverride.enabled} onChange={(event) => updateATHOverride({ enabled: event.target.checked })} type="checkbox" /> Enable historical-peak entry for {selectedAsset}</label><label className="field"><span>Peaks to average (at least {profile.athEntryOverride.peakSpacingMonths || 3} months apart)</span><input disabled={!profile.athEntryOverride.enabled} max="20" min="1" onChange={(event) => updateATHOverride({ peakCount: event.target.value })} step="1" type="number" value={profile.athEntryOverride.peakCount} /></label><label className="field"><span>Minimum months between peaks</span><input disabled={!profile.athEntryOverride.enabled} max="120" min="1" onChange={(event) => updateATHOverride({ peakSpacingMonths: event.target.value })} step="1" type="number" value={profile.athEntryOverride.peakSpacingMonths} /></label><label className="field"><span>Buy at or below (% of peak average)</span><input aria-label="Historical-peak entry threshold" disabled={!profile.athEntryOverride.enabled} max="100" min="0.0001" onChange={(event) => updateATHOverride({ thresholdPct: event.target.value })} step="any" type="number" value={profile.athEntryOverride.thresholdPct} /></label><p className="settings-disclosure">Uses the managed {selectedAsset}-USD daily candle history in SQLite. Only peaks dated before the signal day are used.</p></section>
       <section className="settings-section strategy-selector"><div><h2>Strategy</h2><p className="settings-help">Choose the single ruleset that produces future {selectedAsset} advisories. Each strategy keeps its own saved settings.</p></div><label className="field"><span>Active strategy for {selectedAsset}</span><select aria-label={`Active strategy for ${selectedAsset}`} onChange={(event) => selectStrategy(event.target.value as StrategyID)} value={profile.selectedStrategyId}><option value="RECOVERY_BREAKOUT">Recovery Breakout</option><option value="DIP_ACCUMULATION">Dip Accumulation</option></select></label><p className="strategy-description">{isDipAccumulation ? "Confirms an initial recovery entry, then averages down at fixed percentages below that first-entry reference. It first takes the configured profit, then enables break-even-protected drawdown exits." : "Uses the existing recovery-breakout rules for each staged entry and preserves the MVP sell behaviour."}</p></section>
       <section className="settings-section"><h2>Initial entry confirmation</h2><p className="settings-help">Both strategies require this correction, recovery, and trend gate before their first entry.</p><label className="field"><span>Trend mode</span><select aria-label="Trend filter mode" onChange={(event) => updateTrendMode(event.target.value as StrategyConfig["trendMode"])} value={form.trendMode}><option value="STRICT">STRICT — close must be above SMA200</option><option value="RECOVERY">RECOVERY — allow a confirmed recovery below SMA200</option><option value="OFF">OFF — do not use the SMA200 filter</option></select></label><NumberFields fields={initialEntryFields} form={form} onChange={updateField} /></section>
       <div className="settings-grid">

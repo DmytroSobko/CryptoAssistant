@@ -91,13 +91,11 @@ export interface StrategyConfig {
   athReferencePeak?: number;
   athPeakCount?: number;
   athPeakSpacingMonths?: number;
-  athSourceFile?: string;
 }
 
 export interface ATHEntryOverrideSettings {
   enabled: boolean;
   thresholdPct: number;
-  sourceFile?: string;
   peakCount?: number;
   peakSpacingMonths?: number;
 }
@@ -127,10 +125,6 @@ export interface BacktestCandleSet {
 export interface BacktestCandleRefresh {
   candleSet: BacktestCandleSet;
   addedCandles: number;
-}
-
-export interface HistoricalPeakSourceUpload {
-  sourceFile: string;
 }
 
 export interface BacktestRunInput {

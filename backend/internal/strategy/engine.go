@@ -89,7 +89,6 @@ type Config struct {
 	ATHReferencePeak        float64 `json:"athReferencePeak,omitempty"`
 	ATHPeakCount            int     `json:"athPeakCount,omitempty"`
 	ATHPeakSpacingMonths    int     `json:"athPeakSpacingMonths,omitempty"`
-	ATHSourceFile           string  `json:"athSourceFile,omitempty"`
 }
 
 // PersistedState contains only facts needed to make a subsequent evaluation

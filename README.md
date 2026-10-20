@@ -121,6 +121,8 @@ with the normal pullback, higher-low, breakout, and trend conditions. Zero
 disables this additional gate. It is checked again at entry time even if the
 correction qualified earlier. The historical-peak override remains a separate
 entry route, and the next-open simulated fill can exceed the signal ceiling.
+Both rules derive their historical peak reference from the asset's managed
+daily candle series in SQLite; strategy settings do not require a source file.
 
 Dip Accumulation uses the normal recovery/trend gate for Entry 1. Entries 2
 and 3 then occur at configured dips below the fixed first-entry reference

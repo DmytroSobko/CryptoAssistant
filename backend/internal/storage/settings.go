@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/dmytrosobko/crypto-strategy-assistant/backend/internal/strategy"
@@ -42,7 +41,7 @@ func DefaultAssetStrategySettings(symbol string) strategy.AssetStrategySettings 
 		SelectedStrategyID: selected,
 		RecoveryBreakout:   DefaultStrategyConfig(symbol),
 		DipAccumulation:    DefaultDipAccumulationConfig(symbol),
-		ATHEntryOverride:   strategy.ATHEntryOverrideSettings{Enabled: true, ThresholdPct: 60, SourceFile: ".backtestdata/" + strings.ToLower(symbol) + "-usd-daily-10y-2016-09-30-to-2026-10-07.csv", PeakCount: 3, PeakSpacingMonths: 3},
+		ATHEntryOverride:   strategy.ATHEntryOverrideSettings{Enabled: true, ThresholdPct: 60, PeakCount: 3, PeakSpacingMonths: 3},
 	}
 }
 

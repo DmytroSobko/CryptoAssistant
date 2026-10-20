@@ -14,7 +14,7 @@ const dateRanges = [
   { id: "10Y", label: "10 years", months: 120 },
   { id: "MAX", label: "Max" },
 ] as const;
-type SharedNumericField = Exclude<keyof StrategyConfig, "trendMode" | "strategyId" | "entry2DipFromFirstPct" | "entry3DipFromFirstPct" | "estimatedSellFeeBps" | "breakEvenExitFloorEnabled" | "intradayDrawdownAlertsEnabled" | "athEntryOverrideEnabled" | "athEntryThresholdPct" | "athReferencePeak" | "athPeakCount" | "athPeakSpacingMonths" | "athSourceFile">;
+type SharedNumericField = Exclude<keyof StrategyConfig, "trendMode" | "strategyId" | "entry2DipFromFirstPct" | "entry3DipFromFirstPct" | "estimatedSellFeeBps" | "breakEvenExitFloorEnabled" | "intradayDrawdownAlertsEnabled" | "athEntryOverrideEnabled" | "athEntryThresholdPct" | "athReferencePeak" | "athPeakCount" | "athPeakSpacingMonths">;
 type DipNumericField = "entry2DipFromFirstPct" | "entry3DipFromFirstPct";
 type EditableNumericField = SharedNumericField | DipNumericField;
 
@@ -47,7 +47,7 @@ function strategyID(config: StrategyConfig): StrategyID { return config.strategy
 function strategyName(id: StrategyID | undefined): string { return id === "DIP_ACCUMULATION" ? "Dip Accumulation" : "Recovery Breakout"; }
 function configForStrategy(settings: AssetStrategySettings, id: StrategyID): StrategyConfig {
   const base = id === "DIP_ACCUMULATION" ? settings.dipAccumulation : settings.recoveryBreakout;
-  return { ...base, recoveryEntryMinPeakDiscountPct: base.recoveryEntryMinPeakDiscountPct ?? 0, athEntryOverrideEnabled: settings.athEntryOverride?.enabled ?? false, athEntryThresholdPct: settings.athEntryOverride?.thresholdPct ?? 60, athPeakCount: settings.athEntryOverride?.peakCount ?? 3, athPeakSpacingMonths: settings.athEntryOverride?.peakSpacingMonths ?? 3, athSourceFile: settings.athEntryOverride?.sourceFile };
+  return { ...base, recoveryEntryMinPeakDiscountPct: base.recoveryEntryMinPeakDiscountPct ?? 0, athEntryOverrideEnabled: settings.athEntryOverride?.enabled ?? false, athEntryThresholdPct: settings.athEntryOverride?.thresholdPct ?? 60, athPeakCount: settings.athEntryOverride?.peakCount ?? 3, athPeakSpacingMonths: settings.athEntryOverride?.peakSpacingMonths ?? 3 };
 }
 
 function validateConfig(config: StrategyConfig): string | null {

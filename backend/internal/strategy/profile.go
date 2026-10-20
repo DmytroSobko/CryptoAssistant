@@ -5,7 +5,6 @@ import "fmt"
 type ATHEntryOverrideSettings struct {
 	Enabled           bool    `json:"enabled"`
 	ThresholdPct      float64 `json:"thresholdPct"`
-	SourceFile        string  `json:"sourceFile"`
 	PeakCount         int     `json:"peakCount"`
 	PeakSpacingMonths int     `json:"peakSpacingMonths"`
 }

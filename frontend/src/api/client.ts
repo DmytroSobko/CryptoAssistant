@@ -1,4 +1,4 @@
-import type { AssetStrategySettings, AssetSymbol, BacktestCandleRefresh, BacktestCandleSet, BacktestRun, BacktestRunInput, BacktestRunSummary, HistoricalPeakSourceUpload, MarketSnapshot, Portfolio, PortfolioInput, StrategyConfig, StrategyEvent, StrategyResult } from "../types/api";
+import type { AssetStrategySettings, AssetSymbol, BacktestCandleRefresh, BacktestCandleSet, BacktestRun, BacktestRunInput, BacktestRunSummary, MarketSnapshot, Portfolio, PortfolioInput, StrategyConfig, StrategyEvent, StrategyResult } from "../types/api";
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8080";
 
@@ -36,7 +36,6 @@ export const api = {
   saveConfig: (asset: "BTC" | "ETH", config: StrategyConfig) => request<void>(`/api/config/${asset}`, { method: "PUT", body: JSON.stringify(config) }),
   strategySettings: () => request<Record<AssetSymbol, AssetStrategySettings>>("/api/strategy-settings"),
   saveStrategySettings: (asset: AssetSymbol, settings: AssetStrategySettings) => request<void>(`/api/strategy-settings/${asset}`, { method: "PUT", body: JSON.stringify(settings) }),
-  uploadHistoricalPeakSource: (asset: AssetSymbol, filename: string, csv: string) => request<HistoricalPeakSourceUpload>("/api/historical-peak-sources", { method: "POST", body: JSON.stringify({ asset, filename, csv }) }),
   backtestCandleSets: (asset?: AssetSymbol) => request<BacktestCandleSet[]>(`/api/backtest/candle-sets${asset ? `?asset=${asset}` : ""}`),
   refreshBacktestCandleSet: (asset: AssetSymbol) => request<BacktestCandleRefresh>("/api/backtest/candle-sets/refresh", { method: "POST", body: JSON.stringify({ asset }) }),
   createBacktest: (input: BacktestRunInput) => request<BacktestRun>("/api/backtests", { method: "POST", body: JSON.stringify(input) }),

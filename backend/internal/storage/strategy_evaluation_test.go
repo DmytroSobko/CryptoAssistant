@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -41,6 +42,52 @@ func TestEvaluateStrategyAtomicallyDeduplicatesActionEvents(t *testing.T) {
 	}
 	if len(events) != 1 || events[0].Action != string(strategy.ActionBuy40) || !events[0].Timestamp.Equal(candle.Timestamp) {
 		t.Fatalf("unexpected idempotent events: %+v", events)
+	}
+}
+
+func TestStrategyEvaluationUsesManagedDatabaseCandlesForHistoricalPeak(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "assistant.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { store.Close() })
+	if err := store.Migrate("../../migrations"); err != nil {
+		t.Fatalf("migrate store: %v", err)
+	}
+
+	start := time.Date(2025, time.January, 1, 0, 0, 0, 0, time.UTC)
+	history := make([]market.Candle, 300)
+	for index := range history {
+		history[index] = market.Candle{
+			Timestamp: start.AddDate(0, 0, index),
+			Open:      100,
+			High:      101 + float64(index),
+			Low:       99,
+			Close:     100,
+			Volume:    1,
+		}
+	}
+	if _, err := store.ReplaceManagedBacktestCandleSet(context.Background(), BacktestCandleSet{
+		Asset: "BTC", SourceLabel: "Coinbase Exchange API (managed)", SourceFilename: "btc-usd-daily",
+		OriginalSHA256: strings.Repeat("a", 64),
+	}, history); err != nil {
+		t.Fatalf("store managed history: %v", err)
+	}
+	signalCandle := market.Candle{Timestamp: start.AddDate(0, 0, len(history)), Open: 100, High: 100, Low: 100, Close: 100, Volume: 1}
+	if err := store.SaveDailyCandles(context.Background(), "BTC", []market.Candle{signalCandle}); err != nil {
+		t.Fatalf("save signal candle: %v", err)
+	}
+
+	var referencePeak float64
+	_, err = store.EvaluateStrategyAtomically(context.Background(), "BTC", func(input StrategyEvaluationInput) (strategy.Result, strategy.PersistedState) {
+		referencePeak = input.Config.ATHReferencePeak
+		return strategy.Result{Asset: "BTC", Action: strategy.ActionHold}, input.State
+	})
+	if err != nil {
+		t.Fatalf("evaluate strategy: %v", err)
+	}
+	if referencePeak <= 0 {
+		t.Fatalf("historical reference peak=%v; want managed database candle average", referencePeak)
 	}
 }
 

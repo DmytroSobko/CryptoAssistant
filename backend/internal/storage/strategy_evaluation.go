@@ -274,9 +274,17 @@ func strategyEvaluationInput(ctx context.Context, tx *sql.Tx, asset string) (Str
 	config.ATHEntryThresholdPct = settings.ATHEntryOverride.ThresholdPct
 	config.ATHPeakCount = settings.ATHEntryOverride.PeakCount
 	config.ATHPeakSpacingMonths = settings.ATHEntryOverride.PeakSpacingMonths
-	config.ATHSourceFile = settings.ATHEntryOverride.SourceFile
-	if len(candles) > 0 {
-		peak, selected, peakErr := ath.AverageSpacedPeaksBefore(config.ATHSourceFile, candles[len(candles)-1].Timestamp, config.ATHPeakCount, config.ATHPeakSpacingMonths)
+	if len(candles) > 0 && (config.ATHEntryOverrideEnabled || config.RecoveryEntryMinPeakDiscountPct > 0) {
+		historicalCandles, historyErr := listManagedHistoricalCandles(ctx, tx, asset)
+		if historyErr != nil {
+			return StrategyEvaluationInput{}, historyErr
+		}
+		if len(historicalCandles) == 0 {
+			// The managed launch backfill is asynchronous. Recently persisted
+			// daily snapshots provide a database-only fallback until it finishes.
+			historicalCandles = candles
+		}
+		peak, selected, peakErr := ath.AverageSpacedCandlePeaksBefore(historicalCandles, candles[len(candles)-1].Timestamp, config.ATHPeakCount, config.ATHPeakSpacingMonths)
 		if peakErr != nil {
 			return StrategyEvaluationInput{}, peakErr
 		}
@@ -291,6 +299,32 @@ func strategyEvaluationInput(ctx context.Context, tx *sql.Tx, asset string) (Str
 	var intradayPrice float64
 	_ = tx.QueryRowContext(ctx, `SELECT price FROM market_snapshots WHERE asset = ? AND open IS NULL ORDER BY timestamp DESC LIMIT 1`, asset).Scan(&intradayPrice)
 	return StrategyEvaluationInput{Candles: candles, Position: position, Config: config, State: state, IntradayPrice: intradayPrice}, nil
+}
+
+func listManagedHistoricalCandles(ctx context.Context, tx *sql.Tx, asset string) ([]market.Candle, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT timestamp, open, high, low, close, volume FROM backtest_candles WHERE candle_set_id = ? ORDER BY timestamp`, "managed-"+strings.ToLower(asset))
+	if err != nil {
+		return nil, fmt.Errorf("list managed %s historical candles: %w", asset, err)
+	}
+	defer rows.Close()
+
+	candles := make([]market.Candle, 0)
+	for rows.Next() {
+		var candle market.Candle
+		var timestamp string
+		if err := rows.Scan(&timestamp, &candle.Open, &candle.High, &candle.Low, &candle.Close, &candle.Volume); err != nil {
+			return nil, fmt.Errorf("scan managed %s historical candle: %w", asset, err)
+		}
+		candle.Timestamp, err = parseDatabaseTime(timestamp)
+		if err != nil {
+			return nil, fmt.Errorf("parse managed %s historical candle timestamp: %w", asset, err)
+		}
+		candles = append(candles, candle)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate managed %s historical candles: %w", asset, err)
+	}
+	return candles, nil
 }
 
 func listDailyCandles(ctx context.Context, tx *sql.Tx, asset string) ([]market.Candle, error) {
