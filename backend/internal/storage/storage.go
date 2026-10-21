@@ -23,13 +23,22 @@ func Open(path string) (*Store, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil && filepath.Dir(path) != "." {
 		return nil, fmt.Errorf("create database directory: %w", err)
 	}
-	db, err := sql.Open("sqlite", path)
+	// Foreign-key enforcement and the busy timeout are connection-local in
+	// SQLite, so include them in the DSN to apply them to every pooled
+	// connection. WAL keeps ordinary dashboard reads available while a
+	// background market/history refresh is writing.
+	dsn := path + "?_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)"
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, err
 	}
 	if err := db.Ping(); err != nil {
 		db.Close()
 		return nil, err
+	}
+	if _, err := db.Exec(`PRAGMA journal_mode = WAL`); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("enable WAL journal mode: %w", err)
 	}
 	return &Store{db: db}, nil
 }

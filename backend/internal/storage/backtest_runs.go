@@ -161,13 +161,29 @@ func (s *Store) GetBacktestRun(ctx context.Context, id string) (BacktestRun, err
 // signals, trades, and equity points. It deliberately leaves the immutable
 // imported candle set available for other saved runs and future simulations.
 func (s *Store) DeleteBacktestRun(ctx context.Context, id string) (bool, error) {
-	result, err := s.db.ExecContext(ctx, `DELETE FROM backtest_runs WHERE id = ?`, id)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, fmt.Errorf("begin delete backtest run: %w", err)
+	}
+	defer tx.Rollback()
+	// Keep this explicit even though Open enables foreign keys. It makes the
+	// deletion correct for legacy databases and any externally supplied
+	// connection where PRAGMA foreign_keys was previously disabled.
+	for _, table := range []string{"backtest_signals", "backtest_trades", "backtest_equity_points"} {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM `+table+` WHERE run_id = ?`, id); err != nil {
+			return false, fmt.Errorf("delete backtest run %s: %w", table, err)
+		}
+	}
+	result, err := tx.ExecContext(ctx, `DELETE FROM backtest_runs WHERE id = ?`, id)
 	if err != nil {
 		return false, fmt.Errorf("delete backtest run: %w", err)
 	}
 	deleted, err := result.RowsAffected()
 	if err != nil {
 		return false, fmt.Errorf("count deleted backtest runs: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return false, fmt.Errorf("commit delete backtest run: %w", err)
 	}
 	return deleted == 1, nil
 }
@@ -198,6 +214,11 @@ func (s *Store) DeleteAllBacktestRuns(ctx context.Context) ([]string, int64, err
 	}
 	if err := rows.Err(); err != nil {
 		return nil, 0, fmt.Errorf("iterate linked backtest candle sets: %w", err)
+	}
+	for _, table := range []string{"backtest_signals", "backtest_trades", "backtest_equity_points"} {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM `+table); err != nil {
+			return nil, 0, fmt.Errorf("delete all backtest run %s: %w", table, err)
+		}
 	}
 	result, err := tx.ExecContext(ctx, `DELETE FROM backtest_runs`)
 	if err != nil {

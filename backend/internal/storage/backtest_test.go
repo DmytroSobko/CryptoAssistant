@@ -237,6 +237,12 @@ func TestBacktestRunRoundTripAndAssetMismatchAreIsolated(t *testing.T) {
 	if err != nil || !deleted {
 		t.Fatalf("delete saved run: deleted=%v err=%v", deleted, err)
 	}
+	for _, table := range []string{"backtest_signals", "backtest_trades", "backtest_equity_points"} {
+		var count int
+		if err := store.DB().QueryRow(`SELECT COUNT(*) FROM `+table+` WHERE run_id = ?`, saved.ID).Scan(&count); err != nil || count != 0 {
+			t.Fatalf("deleted run has %d rows in %s: %v", count, table, err)
+		}
+	}
 	if _, err := store.GetBacktestRun(context.Background(), saved.ID); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("deleted run remains readable: %v", err)
 	}
@@ -246,6 +252,45 @@ func TestBacktestRunRoundTripAndAssetMismatchAreIsolated(t *testing.T) {
 	}
 	if _, _, err := store.GetBacktestCandleSet(context.Background(), set.ID); err != nil {
 		t.Fatalf("deleting a run removed its candle set: %v", err)
+	}
+}
+
+func TestDeleteAllBacktestRunsRemovesDependentRows(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "assistant.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	if err := store.Migrate("../../migrations"); err != nil {
+		t.Fatal(err)
+	}
+	candles := backtestCandles(201)
+	set, err := store.ImportBacktestCandleSet(context.Background(), BacktestCandleSet{
+		Asset: "BTC", SourceLabel: "delete-all fixture", SourceFilename: "btc.csv", OriginalSHA256: strings.Repeat("d", 64),
+	}, candles)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := backtest.Request{Asset: "BTC", Start: candles[199].Timestamp, End: candles[200].Timestamp, StartingCashUSD: 1000, StrategyConfig: storageBacktestConfig(), FeeBps: 10, SlippageBps: 5, ExecutionModel: backtest.ExecutionModelNextDailyOpen}
+	result, err := backtest.Run(request, candles)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		if _, err := store.SaveBacktestRun(context.Background(), set.ID, result); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	linked, deleted, err := store.DeleteAllBacktestRuns(context.Background())
+	if err != nil || deleted != 2 || len(linked) != 1 || linked[0] != set.ID {
+		t.Fatalf("delete all: linked=%v deleted=%d err=%v", linked, deleted, err)
+	}
+	for _, table := range []string{"backtest_runs", "backtest_signals", "backtest_trades", "backtest_equity_points"} {
+		var count int
+		if err := store.DB().QueryRow(`SELECT COUNT(*) FROM ` + table).Scan(&count); err != nil || count != 0 {
+			t.Fatalf("delete all left %d rows in %s: %v", count, table, err)
+		}
 	}
 }
 

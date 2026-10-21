@@ -59,7 +59,8 @@ export default function App() {
       for (const result of results) {
         if (result.status === "rejected") failures.push(result.reason);
       }
-      setConnectionError(failures.length > 0 ? failures.map((failure) => failure instanceof Error ? failure.message : "Request failed").join(" · ") : null);
+      const failureMessages = [...new Set(failures.map((failure) => failure instanceof Error ? failure.message : "Request failed"))];
+      setConnectionError(failureMessages.length > 0 ? failureMessages.join(" · ") : null);
       setLastDashboardRefresh(new Date());
     } finally {
       dashboardRefreshInProgress.current = false;

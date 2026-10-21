@@ -80,6 +80,7 @@ func (s *Server) handleMarket(w http.ResponseWriter, r *http.Request) {
 	}
 	snapshot, err := s.store.LatestSnapshot(r.Context(), asset)
 	if err != nil {
+		log.Printf("load %s market snapshot: %v", asset, err)
 		writeError(w, http.StatusNotFound, "market data has not been loaded yet")
 		return
 	}
@@ -111,6 +112,7 @@ func (s *Server) handleStrategy(w http.ResponseWriter, r *http.Request) {
 	}
 	result, err := s.strategyService.Evaluate(r.Context(), asset)
 	if err != nil {
+		log.Printf("evaluate %s strategy: %v", asset, err)
 		writeError(w, http.StatusInternalServerError, "could not evaluate strategy")
 		return
 	}
@@ -144,6 +146,7 @@ func (s *Server) handleResolveRecommendation(w http.ResponseWriter, r *http.Requ
 func (s *Server) handleGetPortfolio(w http.ResponseWriter, r *http.Request) {
 	result, err := s.store.GetPortfolio(r.Context())
 	if err != nil {
+		log.Printf("load portfolio: %v", err)
 		writeError(w, http.StatusInternalServerError, "could not load portfolio")
 		return
 	}

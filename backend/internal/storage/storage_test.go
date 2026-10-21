@@ -40,6 +40,29 @@ func TestMigrateAndPersistPortfolio(t *testing.T) {
 	}
 }
 
+func TestOpenEnablesSQLiteSafetyPragmas(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "assistant.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer store.Close()
+
+	var foreignKeys int
+	if err := store.DB().QueryRow(`PRAGMA foreign_keys`).Scan(&foreignKeys); err != nil {
+		t.Fatalf("read foreign_keys pragma: %v", err)
+	}
+	if foreignKeys != 1 {
+		t.Fatalf("foreign_keys = %d; want 1", foreignKeys)
+	}
+	var journalMode string
+	if err := store.DB().QueryRow(`PRAGMA journal_mode`).Scan(&journalMode); err != nil {
+		t.Fatalf("read journal_mode pragma: %v", err)
+	}
+	if journalMode != "wal" {
+		t.Fatalf("journal_mode = %q; want wal", journalMode)
+	}
+}
+
 func TestMigrateIsIdempotentAndConfigDefaultsAreIndependent(t *testing.T) {
 	store, err := Open(filepath.Join(t.TempDir(), "assistant.db"))
 	if err != nil {
