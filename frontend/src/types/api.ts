@@ -1,6 +1,10 @@
 export type AssetSymbol = "BTC" | "ETH";
 export type StrategyID = "RECOVERY_BREAKOUT" | "DIP_ACCUMULATION";
 
+export interface RuntimeConfig {
+  priceRefreshIntervalSeconds: number;
+}
+
 export interface AssetPosition {
   symbol: AssetSymbol;
   quantity: number;

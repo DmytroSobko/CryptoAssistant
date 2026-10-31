@@ -351,13 +351,67 @@ func TestMarketRefreshEndpointReportsProviderFailure(t *testing.T) {
 	}
 }
 
+func TestPriceRefreshEndpointUsesLightweightRefresh(t *testing.T) {
+	refresher := &fakeMarketRefresher{}
+	handler := NewServer(nil, config.Config{}, refresher).Routes()
+
+	response := serve(handler, http.MethodPost, "/api/market/prices/refresh", nil)
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("price refresh status = %d, body = %s", response.Code, response.Body.String())
+	}
+	if refresher.priceCalls != 1 || refresher.calls != 0 {
+		t.Fatalf("refresh calls: prices=%d full=%d", refresher.priceCalls, refresher.calls)
+	}
+}
+
+func TestRuntimeConfigReturnsPriceRefreshInterval(t *testing.T) {
+	handler := NewServer(nil, config.Config{PriceRefreshInterval: 12 * time.Second}, nil).Routes()
+
+	response := serve(handler, http.MethodGet, "/api/runtime-config", nil)
+	if response.Code != http.StatusOK || !bytes.Contains(response.Body.Bytes(), []byte(`"priceRefreshIntervalSeconds":12`)) {
+		t.Fatalf("runtime config response (%d): %s", response.Code, response.Body.String())
+	}
+}
+
+func TestRuntimeConfigUpdatePersistsPriceRefreshInterval(t *testing.T) {
+	store, err := storage.Open(filepath.Join(t.TempDir(), "assistant.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+	if err := store.Migrate("../../migrations"); err != nil {
+		t.Fatal(err)
+	}
+	handler := NewServer(store, config.Config{PriceRefreshInterval: 30 * time.Second}, nil).Routes()
+
+	updated := serve(handler, http.MethodPut, "/api/runtime-config", []byte(`{"priceRefreshIntervalSeconds":12}`))
+	if updated.Code != http.StatusNoContent {
+		t.Fatalf("runtime config update (%d): %s", updated.Code, updated.Body.String())
+	}
+	loaded := serve(handler, http.MethodGet, "/api/runtime-config", nil)
+	if loaded.Code != http.StatusOK || !bytes.Contains(loaded.Body.Bytes(), []byte(`"priceRefreshIntervalSeconds":12`)) {
+		t.Fatalf("runtime config response (%d): %s", loaded.Code, loaded.Body.String())
+	}
+
+	invalid := serve(handler, http.MethodPut, "/api/runtime-config", []byte(`{"priceRefreshIntervalSeconds":0}`))
+	if invalid.Code != http.StatusBadRequest {
+		t.Fatalf("invalid runtime config update (%d): %s", invalid.Code, invalid.Body.String())
+	}
+}
+
 type fakeMarketRefresher struct {
-	calls int
-	err   error
+	calls      int
+	priceCalls int
+	err        error
 }
 
 func (f *fakeMarketRefresher) RefreshAll(context.Context) error {
 	f.calls++
+	return f.err
+}
+
+func (f *fakeMarketRefresher) RefreshPrices(context.Context) error {
+	f.priceCalls++
 	return f.err
 }
 

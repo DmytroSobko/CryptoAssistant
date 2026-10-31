@@ -14,6 +14,7 @@ type Config struct {
 	MigrationsDir         string
 	MarketDataBaseURL     string
 	MarketRefreshInterval time.Duration
+	PriceRefreshInterval  time.Duration
 }
 
 func Load() Config {
@@ -23,6 +24,7 @@ func Load() Config {
 		MigrationsDir:         envOr("CRYPTO_ASSISTANT_MIGRATIONS_DIR", "migrations"),
 		MarketDataBaseURL:     envOr("CRYPTO_ASSISTANT_MARKET_DATA_BASE_URL", "https://api.exchange.coinbase.com"),
 		MarketRefreshInterval: durationEnvOr("CRYPTO_ASSISTANT_MARKET_REFRESH_INTERVAL", 15*time.Minute),
+		PriceRefreshInterval:  durationEnvOrBetween("CRYPTO_ASSISTANT_PRICE_REFRESH_INTERVAL", 30*time.Second, time.Second, 24*time.Hour),
 	}
 }
 
@@ -40,6 +42,19 @@ func durationEnvOr(key string, fallback time.Duration) time.Duration {
 	}
 	duration, err := time.ParseDuration(value)
 	if err != nil || duration <= 0 {
+		log.Printf("invalid %s=%q; using %s", key, value, fallback)
+		return fallback
+	}
+	return duration
+}
+
+func durationEnvOrBetween(key string, fallback, minimum, maximum time.Duration) time.Duration {
+	value := os.Getenv(key)
+	if value == "" {
+		return fallback
+	}
+	duration, err := time.ParseDuration(value)
+	if err != nil || duration < minimum || duration > maximum {
 		log.Printf("invalid %s=%q; using %s", key, value, fallback)
 		return fallback
 	}

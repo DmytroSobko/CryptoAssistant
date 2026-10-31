@@ -8,6 +8,7 @@ import { StrategySettingsPage } from "./pages/StrategySettingsPage";
 import type { AssetSymbol, MarketSnapshot, Portfolio, StrategyResult } from "./types/api";
 
 type Page = "dashboard" | "portfolio" | "history" | "settings" | "backtests";
+const DEFAULT_PRICE_REFRESH_INTERVAL_SECONDS = 30;
 
 const pages: Record<Page, { label: string }> = {
   dashboard: { label: "Dashboard" },
@@ -23,7 +24,9 @@ export default function App() {
   const [market, setMarket] = useState<Record<AssetSymbol, MarketSnapshot | null>>({ BTC: null, ETH: null });
   const [strategy, setStrategy] = useState<Record<AssetSymbol, StrategyResult | null>>({ BTC: null, ETH: null });
   const [isDashboardLoading, setIsDashboardLoading] = useState(true);
+  const [isDashboardRefreshing, setIsDashboardRefreshing] = useState(true);
   const [lastDashboardRefresh, setLastDashboardRefresh] = useState<Date | null>(null);
+  const [priceRefreshIntervalSeconds, setPriceRefreshIntervalSeconds] = useState(DEFAULT_PRICE_REFRESH_INTERVAL_SECONDS);
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const dashboardRequested = useRef(false);
   const dashboardRefreshInProgress = useRef(false);
@@ -32,6 +35,7 @@ export default function App() {
     if (dashboardRefreshInProgress.current) return;
     dashboardRefreshInProgress.current = true;
     setIsDashboardLoading(true);
+    setIsDashboardRefreshing(true);
     setConnectionError(null);
     try {
       const failures: unknown[] = [];
@@ -65,6 +69,36 @@ export default function App() {
     } finally {
       dashboardRefreshInProgress.current = false;
       setIsDashboardLoading(false);
+      setIsDashboardRefreshing(false);
+    }
+  }, []);
+
+  const refreshDisplayedPrices = useCallback(async () => {
+    if (dashboardRefreshInProgress.current) return;
+    dashboardRefreshInProgress.current = true;
+    setIsDashboardRefreshing(true);
+    setConnectionError(null);
+    try {
+      const failures: unknown[] = [];
+      try {
+        await api.refreshPrices();
+      } catch (error) {
+        failures.push(error);
+      }
+
+      const results = await Promise.allSettled([api.market("BTC"), api.market("ETH")]);
+      const [btcMarket, ethMarket] = results;
+      if (btcMarket.status === "fulfilled") setMarket((current) => ({ ...current, BTC: btcMarket.value }));
+      if (ethMarket.status === "fulfilled") setMarket((current) => ({ ...current, ETH: ethMarket.value }));
+      for (const result of results) {
+        if (result.status === "rejected") failures.push(result.reason);
+      }
+      const failureMessages = [...new Set(failures.map((failure) => failure instanceof Error ? failure.message : "Request failed"))];
+      setConnectionError(failureMessages.length > 0 ? failureMessages.join(" · ") : null);
+      setLastDashboardRefresh(new Date());
+    } finally {
+      dashboardRefreshInProgress.current = false;
+      setIsDashboardRefreshing(false);
     }
   }, []);
 
@@ -77,6 +111,31 @@ export default function App() {
     void refreshDashboard();
   }, [refreshDashboard]);
 
+  useEffect(() => {
+    let isCurrent = true;
+    void api.runtimeConfig().then((runtimeConfig) => {
+      const seconds = runtimeConfig.priceRefreshIntervalSeconds;
+      if (isCurrent && Number.isFinite(seconds) && seconds >= 1) {
+        setPriceRefreshIntervalSeconds(seconds);
+      }
+    }).catch((error: unknown) => {
+      if (isCurrent) {
+        setConnectionError(error instanceof Error ? error.message : "Could not load runtime configuration");
+      }
+    });
+    return () => { isCurrent = false; };
+  }, []);
+
+  useEffect(() => {
+    if (page !== "dashboard") return;
+
+    void refreshDisplayedPrices();
+    const interval = window.setInterval(() => {
+      void refreshDisplayedPrices();
+    }, priceRefreshIntervalSeconds * 1000);
+    return () => window.clearInterval(interval);
+  }, [page, priceRefreshIntervalSeconds, refreshDisplayedPrices]);
+
   function handlePortfolioSaved(savedPortfolio: Portfolio) {
     setPortfolio(savedPortfolio);
     // A manual position change is an observed strategy fact (for example, a
@@ -85,6 +144,10 @@ export default function App() {
   }
   function handleResolveRecommendation(id: number, status: "EXECUTED" | "DISMISSED") {
     void api.resolveRecommendation(id, status).then(() => refreshDashboard());
+  }
+  async function handlePriceRefreshIntervalChange(seconds: number) {
+    await api.saveRuntimeConfig({ priceRefreshIntervalSeconds: seconds });
+    setPriceRefreshIntervalSeconds(seconds);
   }
 
   return (
@@ -97,7 +160,7 @@ export default function App() {
         <p className={connectionError ? "connection connection--error" : "connection"}>{connectionError ? `Data unavailable: ${connectionError}` : "Local API connected"}</p>
       </aside>
       <section className="content">
-        {page === "dashboard" && <DashboardPage isLoading={isDashboardLoading} lastRefreshedAt={lastDashboardRefresh} market={market} onRefresh={refreshDashboard} onResolveRecommendation={handleResolveRecommendation} portfolio={portfolio} strategy={strategy} />}
+        {page === "dashboard" && <DashboardPage isLoading={isDashboardLoading} isRefreshing={isDashboardRefreshing} lastRefreshedAt={lastDashboardRefresh} market={market} onPriceRefreshIntervalChange={handlePriceRefreshIntervalChange} onRefresh={refreshDashboard} onResolveRecommendation={handleResolveRecommendation} portfolio={portfolio} priceRefreshIntervalSeconds={priceRefreshIntervalSeconds} strategy={strategy} />}
         {page === "portfolio" && <PortfolioPage isLoading={isDashboardLoading} onSaved={handlePortfolioSaved} portfolio={portfolio} />}
         {page === "history" && <HistoryPage />}
         {page === "settings" && <StrategySettingsPage />}

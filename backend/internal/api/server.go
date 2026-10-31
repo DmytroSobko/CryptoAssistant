@@ -24,28 +24,33 @@ import (
 // particular provider while leaving strategy evaluation independent of it.
 type MarketRefresher interface {
 	RefreshAll(context.Context) error
+	RefreshPrices(context.Context) error
 }
 
 type Server struct {
 	store           *storage.Store
+	config          config.Config
 	marketRefresher MarketRefresher
 	strategyService *strategyservice.Service
 	backtestService *backtestservice.Service
 }
 
-func NewServer(store *storage.Store, _ config.Config, marketRefresher MarketRefresher) *Server {
-	return &Server{store: store, marketRefresher: marketRefresher, strategyService: strategyservice.New(store), backtestService: backtestservice.New(store)}
+func NewServer(store *storage.Store, cfg config.Config, marketRefresher MarketRefresher) *Server {
+	return &Server{store: store, config: cfg, marketRefresher: marketRefresher, strategyService: strategyservice.New(store), backtestService: backtestservice.New(store)}
 }
 
-func NewServerWithManagedBacktestData(store *storage.Store, _ config.Config, marketRefresher MarketRefresher, managed *backtestservice.ManagedHistory) *Server {
-	return &Server{store: store, marketRefresher: marketRefresher, strategyService: strategyservice.New(store), backtestService: backtestservice.NewManaged(store, managed)}
+func NewServerWithManagedBacktestData(store *storage.Store, cfg config.Config, marketRefresher MarketRefresher, managed *backtestservice.ManagedHistory) *Server {
+	return &Server{store: store, config: cfg, marketRefresher: marketRefresher, strategyService: strategyservice.New(store), backtestService: backtestservice.NewManaged(store, managed)}
 }
 
 func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.handleHealth)
+	mux.HandleFunc("GET /api/runtime-config", s.handleRuntimeConfig)
+	mux.HandleFunc("PUT /api/runtime-config", s.handleUpdateRuntimeConfig)
 	mux.HandleFunc("GET /api/market/{asset}", s.handleMarket)
 	mux.HandleFunc("POST /api/market/refresh", s.handleRefreshMarket)
+	mux.HandleFunc("POST /api/market/prices/refresh", s.handleRefreshPrices)
 	mux.HandleFunc("GET /api/strategy/{asset}", s.handleStrategy)
 	mux.HandleFunc("GET /api/portfolio", s.handleGetPortfolio)
 	mux.HandleFunc("PUT /api/portfolio", s.handlePutPortfolio)
@@ -70,6 +75,41 @@ func (s *Server) Routes() http.Handler {
 
 func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (s *Server) handleRuntimeConfig(w http.ResponseWriter, r *http.Request) {
+	seconds := int(s.config.PriceRefreshInterval / time.Second)
+	if seconds < storage.MinPriceRefreshIntervalSeconds || seconds > storage.MaxPriceRefreshIntervalSeconds {
+		seconds = 30
+	}
+	if s.store != nil {
+		storedSeconds, err := s.store.PriceRefreshIntervalSeconds(r.Context(), seconds)
+		if err != nil {
+			log.Printf("load price refresh interval: %v", err)
+		} else {
+			seconds = storedSeconds
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]int{"priceRefreshIntervalSeconds": seconds})
+}
+
+func (s *Server) handleUpdateRuntimeConfig(w http.ResponseWriter, r *http.Request) {
+	if s.store == nil {
+		writeError(w, http.StatusServiceUnavailable, "runtime settings are unavailable")
+		return
+	}
+	var input struct {
+		PriceRefreshIntervalSeconds int `json:"priceRefreshIntervalSeconds"`
+	}
+	if err := decodeJSON(r, &input); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := s.store.SavePriceRefreshIntervalSeconds(r.Context(), input.PriceRefreshIntervalSeconds); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) handleMarket(w http.ResponseWriter, r *http.Request) {
@@ -99,6 +139,23 @@ func (s *Server) handleRefreshMarket(w http.ResponseWriter, r *http.Request) {
 	if err := s.marketRefresher.RefreshAll(ctx); err != nil {
 		log.Printf("manual market refresh: %v", err)
 		writeError(w, http.StatusBadGateway, "could not refresh market data; existing prices were kept")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleRefreshPrices updates only the display quotes used by the dashboard.
+// Manual refresh retains the full candle refresh above.
+func (s *Server) handleRefreshPrices(w http.ResponseWriter, r *http.Request) {
+	if s.marketRefresher == nil {
+		writeError(w, http.StatusServiceUnavailable, "price refresh is unavailable")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	if err := s.marketRefresher.RefreshPrices(ctx); err != nil {
+		log.Printf("automatic price refresh: %v", err)
+		writeError(w, http.StatusBadGateway, "could not refresh prices; existing prices were kept")
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

@@ -7,7 +7,8 @@ place orders, or execute trades.
 ## What it does
 
 - Loads public Coinbase BTC/USD and ETH/USD market data at startup and every
-  15 minutes.
+  15 minutes, and refreshes dashboard display quotes every 30 seconds by
+  default while the Dashboard is open.
 - Persists the current display price and up to 250 completed UTC daily OHLC
   candles locally in SQLite.
 - Evaluates one selected deterministic, explainable strategy per asset using
@@ -80,8 +81,11 @@ The backend reads environment variables; it does not automatically load an
 | `CRYPTO_ASSISTANT_MIGRATIONS_DIR` | `migrations` |
 | `CRYPTO_ASSISTANT_MARKET_DATA_BASE_URL` | `https://api.exchange.coinbase.com` |
 | `CRYPTO_ASSISTANT_MARKET_REFRESH_INTERVAL` | `15m` |
+| `CRYPTO_ASSISTANT_PRICE_REFRESH_INTERVAL` | `30s` |
 
-`.env.example` lists the usual local path and API-address values.
+`.env.example` lists the usual local path and API-address values. Refresh
+intervals use Go duration syntax such as `10s` or `1m`; the dashboard price
+interval must be between one second and 24 hours.
 
 ## User workflows
 
@@ -89,9 +93,14 @@ The backend reads environment variables; it does not automatically load an
 
 The dashboard displays BTC and ETH display prices, trend, strategy state,
 manual position, average entry, P/L, local high, drawdown, action, reason, and
-next condition. Use **Refresh** to reload the local portfolio, current market
-snapshots, and strategy results. It labels the completed daily close used as
-the decision basis separately from the intraday display price.
+next condition. While the Dashboard is open, its display prices update
+automatically. Enter an interval in seconds beside **Auto-refresh** and choose
+**Apply** to change it immediately; the choice is stored locally for future
+launches. `CRYPTO_ASSISTANT_PRICE_REFRESH_INTERVAL` supplies the initial
+default until an in-app value is saved. Use **Refresh** for an immediate full
+reload of market data, the local portfolio, and strategy results. It labels
+the completed daily close used as the decision basis separately from the
+intraday display price.
 
 ### Portfolio
 
@@ -219,7 +228,10 @@ recommendation.
 | Method | Route | Purpose |
 | --- | --- | --- |
 | `GET` | `/healthz` | Local API health check |
+| `GET` / `PUT` | `/api/runtime-config` | Read or update dashboard runtime settings |
 | `GET` | `/api/market/{asset}` | Current display snapshot for BTC or ETH |
+| `POST` | `/api/market/refresh` | Immediately refresh display prices and completed daily candles |
+| `POST` | `/api/market/prices/refresh` | Refresh display prices without downloading daily candles |
 | `GET` | `/api/strategy/{asset}` | Deterministic completed-daily-candle advisory result |
 | `GET` / `PUT` | `/api/portfolio` | Manual portfolio values |
 | `GET` | `/api/history` | Persisted actionable strategy events |

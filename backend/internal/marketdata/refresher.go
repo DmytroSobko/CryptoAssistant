@@ -36,6 +36,13 @@ func (r *Refresher) RefreshAsset(ctx context.Context, symbol string) error {
 	if err := r.store.SaveDailyCandles(ctx, symbol, candles); err != nil {
 		return fmt.Errorf("persist %s daily candles: %w", symbol, err)
 	}
+	return r.RefreshPrice(ctx, symbol)
+}
+
+// RefreshPrice updates only the current display price. This lightweight path
+// is used by the dashboard's frequent auto-refresh and deliberately avoids
+// downloading the daily candle history on every tick.
+func (r *Refresher) RefreshPrice(ctx context.Context, symbol string) error {
 	price, err := r.provider.GetCurrentPrice(symbol)
 	if err != nil {
 		return fmt.Errorf("load %s current price: %w", symbol, err)
@@ -53,6 +60,19 @@ func (r *Refresher) RefreshAll(ctx context.Context) error {
 	var refreshErrors []error
 	for _, symbol := range []string{"BTC", "ETH"} {
 		if err := r.RefreshAsset(ctx, symbol); err != nil {
+			refreshErrors = append(refreshErrors, err)
+		}
+	}
+	return errors.Join(refreshErrors...)
+}
+
+func (r *Refresher) RefreshPrices(ctx context.Context) error {
+	r.refreshMu.Lock()
+	defer r.refreshMu.Unlock()
+
+	var refreshErrors []error
+	for _, symbol := range []string{"BTC", "ETH"} {
+		if err := r.RefreshPrice(ctx, symbol); err != nil {
 			refreshErrors = append(refreshErrors, err)
 		}
 	}

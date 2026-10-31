@@ -1,4 +1,4 @@
-import type { AssetStrategySettings, AssetSymbol, BacktestCandleRefresh, BacktestCandleSet, BacktestRun, BacktestRunInput, BacktestRunSummary, MarketSnapshot, Portfolio, PortfolioInput, StrategyConfig, StrategyEvent, StrategyResult } from "../types/api";
+import type { AssetStrategySettings, AssetSymbol, BacktestCandleRefresh, BacktestCandleSet, BacktestRun, BacktestRunInput, BacktestRunSummary, MarketSnapshot, Portfolio, PortfolioInput, RuntimeConfig, StrategyConfig, StrategyEvent, StrategyResult } from "../types/api";
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8080";
 
@@ -25,8 +25,11 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 
 export const api = {
   health: () => request<{ status: string }>("/healthz"),
+  runtimeConfig: () => request<RuntimeConfig>("/api/runtime-config"),
+  saveRuntimeConfig: (config: RuntimeConfig) => request<void>("/api/runtime-config", { method: "PUT", body: JSON.stringify(config) }),
   market: (asset: AssetSymbol) => request<MarketSnapshot>(`/api/market/${asset}`),
   refreshMarket: () => request<void>("/api/market/refresh", { method: "POST" }),
+  refreshPrices: () => request<void>("/api/market/prices/refresh", { method: "POST" }),
   strategy: (asset: AssetSymbol) => request<StrategyResult>(`/api/strategy/${asset}`),
   resolveRecommendation: (id: number, status: "EXECUTED" | "DISMISSED") => request<void>(`/api/recommendations/${id}/resolve`, { method: "POST", body: JSON.stringify({ status }) }),
   history: () => request<StrategyEvent[]>("/api/history"),
