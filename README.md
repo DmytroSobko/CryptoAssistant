@@ -100,7 +100,8 @@ launches. `CRYPTO_ASSISTANT_PRICE_REFRESH_INTERVAL` supplies the initial
 default until an in-app value is saved. Use **Refresh** for an immediate full
 reload of market data, the local portfolio, and strategy results. It labels
 the completed daily close used as the decision basis separately from the
-intraday display price.
+intraday display price. When a refreshed display price changes, the card
+briefly animates the signed dollar difference in green or red.
 
 ### Portfolio
 

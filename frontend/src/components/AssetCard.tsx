@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import type { AssetPosition, AssetSymbol, MarketSnapshot, StrategyResult } from "../types/api";
 
 interface AssetCardProps {
@@ -16,6 +17,10 @@ function currency(value: number | undefined): string {
 function percent(value: number | undefined): string {
   if (value === undefined) return "—";
   return `${value > 0 ? "+" : ""}${value.toFixed(1)}%`;
+}
+
+function signedCurrencyDelta(value: number): string {
+  return `${value > 0 ? "+" : "-"}${Math.abs(value).toFixed(2)}`;
 }
 
 function timestamp(value: string | undefined): string {
@@ -38,12 +43,35 @@ function strategyName(strategyId: StrategyResult["strategyId"]): string {
 }
 
 export function AssetCard({ asset, position, market, strategy, isLoading, onResolveRecommendation }: AssetCardProps) {
+  const previousPrice = useRef<number | null>(market?.price ?? null);
+  const priceDeltaSequence = useRef(0);
+  const [priceDelta, setPriceDelta] = useState<{ id: number; value: number } | null>(null);
   const quantity = position?.quantity ?? 0;
   const entry = position?.averageEntryPrice ?? 0;
   const hasPosition = quantity > 0;
   const action = actionLabel(strategy);
   const actionClass = action.startsWith("BUY") ? "signal__action--buy" : action.startsWith("SELL") ? "signal__action--sell" : "";
   const status = isLoading ? "Loading data" : market ? "Market data loaded" : "Market data unavailable";
+
+  useEffect(() => {
+    const nextPrice = market?.price;
+    if (nextPrice === undefined) {
+      previousPrice.current = null;
+      return;
+    }
+
+    const lastPrice = previousPrice.current;
+    previousPrice.current = nextPrice;
+    if (lastPrice === null) return;
+
+    const delta = Math.round((nextPrice - lastPrice) * 100) / 100;
+    if (delta === 0) return;
+
+    priceDeltaSequence.current += 1;
+    setPriceDelta({ id: priceDeltaSequence.current, value: delta });
+    const timeout = window.setTimeout(() => setPriceDelta(null), 1900);
+    return () => window.clearTimeout(timeout);
+  }, [market?.price]);
 
   return (
     <article className="asset-card">
@@ -52,7 +80,7 @@ export function AssetCard({ asset, position, market, strategy, isLoading, onReso
         <span className={market ? "badge badge--ready" : "badge badge--muted"}>{status}</span>
       </div>
       <dl className="metrics">
-        <div><dt>Display price</dt><dd>{currency(market?.price)}</dd></div>
+        <div><dt>Display price</dt><dd><span className="market-price__value">{currency(market?.price)}{priceDelta && <span aria-live="polite" className={priceDelta.value > 0 ? "price-delta price-delta--up" : "price-delta price-delta--down"} key={priceDelta.id}>{signedCurrencyDelta(priceDelta.value)}</span>}</span></dd></div>
         <div><dt>Trend</dt><dd>{strategy?.trend ?? "—"}</dd></div>
         <div><dt>Strategy state</dt><dd>{strategy?.state ?? "—"}</dd></div>
         <div><dt>Position</dt><dd>{quantity} {asset}</dd></div>
