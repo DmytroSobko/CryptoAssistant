@@ -46,14 +46,36 @@ func (s *Store) SaveCurrentPrice(ctx context.Context, snapshot market.Snapshot) 
 	if snapshot.UpdatedAt.IsZero() {
 		return fmt.Errorf("current %s price timestamp is required", symbol)
 	}
-	_, err = s.db.ExecContext(ctx, `
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin save current %s price: %w", symbol, err)
+	}
+	defer tx.Rollback()
+	timestamp := databaseTime(snapshot.UpdatedAt)
+	_, err = tx.ExecContext(ctx, `
 		INSERT INTO market_snapshots(asset, timestamp, price)
 		VALUES (?, ?, ?)
 		ON CONFLICT(asset, timestamp) DO UPDATE SET price = excluded.price,
 			open = NULL, high = NULL, low = NULL, close = NULL, volume = NULL`,
-		symbol, databaseTime(snapshot.UpdatedAt), snapshot.Price)
+		symbol, timestamp, snapshot.Price)
 	if err != nil {
 		return fmt.Errorf("save current %s price: %w", symbol, err)
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM market_snapshots WHERE asset = ? AND open IS NULL AND timestamp <> ?`, symbol, timestamp); err != nil {
+		return fmt.Errorf("prune current %s snapshots: %w", symbol, err)
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO market_price_history(asset, timestamp, price) VALUES (?, ?, ?)`, symbol, timestamp, snapshot.Price); err != nil {
+		return fmt.Errorf("append current %s price history: %w", symbol, err)
+	}
+	limit, err := priceHistoryRecordLimit(ctx, tx, symbol)
+	if err != nil {
+		return err
+	}
+	if err := prunePriceHistory(ctx, tx, symbol, limit); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit current %s price: %w", symbol, err)
 	}
 	return nil
 }

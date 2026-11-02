@@ -1,4 +1,4 @@
-import type { AssetStrategySettings, AssetSymbol, BacktestCandleRefresh, BacktestCandleSet, BacktestRun, BacktestRunInput, BacktestRunSummary, MarketSnapshot, Portfolio, PortfolioInput, RuntimeConfig, StrategyConfig, StrategyEvent, StrategyResult } from "../types/api";
+import type { AssetStrategySettings, AssetSymbol, BacktestCandleRefresh, BacktestCandleSet, BacktestRun, BacktestRunInput, BacktestRunSummary, MarketPriceHistory, MarketSnapshot, Portfolio, PortfolioInput, RuntimeConfig, StrategyConfig, StrategyEvent, StrategyResult } from "../types/api";
 
 const API_BASE_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8080";
 
@@ -28,6 +28,8 @@ export const api = {
   runtimeConfig: () => request<RuntimeConfig>("/api/runtime-config"),
   saveRuntimeConfig: (config: RuntimeConfig) => request<void>("/api/runtime-config", { method: "PUT", body: JSON.stringify(config) }),
   market: (asset: AssetSymbol) => request<MarketSnapshot>(`/api/market/${asset}`),
+  marketHistory: (asset: AssetSymbol) => request<MarketPriceHistory>(`/api/market/${asset}/history`),
+  saveMarketHistorySettings: (asset: AssetSymbol, recordLimit: number) => request<void>(`/api/market/${asset}/history`, { method: "PUT", body: JSON.stringify({ recordLimit }) }),
   refreshMarket: () => request<void>("/api/market/refresh", { method: "POST" }),
   refreshPrices: () => request<void>("/api/market/prices/refresh", { method: "POST" }),
   strategy: (asset: AssetSymbol) => request<StrategyResult>(`/api/strategy/${asset}`),

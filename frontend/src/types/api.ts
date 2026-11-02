@@ -29,6 +29,17 @@ export interface MarketSnapshot {
   updatedAt: string;
 }
 
+export interface MarketPricePoint {
+  timestamp: string;
+  price: number;
+}
+
+export interface MarketPriceHistory {
+  asset: AssetSymbol;
+  recordLimit: number;
+  points: MarketPricePoint[];
+}
+
 export interface StrategyResult {
   asset: AssetSymbol;
   strategyId?: StrategyID;

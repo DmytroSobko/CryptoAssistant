@@ -5,7 +5,7 @@ import { BacktestPage } from "./pages/BacktestPage";
 import { HistoryPage } from "./pages/HistoryPage";
 import { PortfolioPage } from "./pages/PortfolioPage";
 import { StrategySettingsPage } from "./pages/StrategySettingsPage";
-import type { AssetSymbol, MarketSnapshot, Portfolio, StrategyResult } from "./types/api";
+import type { AssetSymbol, MarketPriceHistory, MarketSnapshot, Portfolio, StrategyResult } from "./types/api";
 
 type Page = "dashboard" | "portfolio" | "history" | "settings" | "backtests";
 const DEFAULT_PRICE_REFRESH_INTERVAL_SECONDS = 30;
@@ -22,6 +22,10 @@ export default function App() {
   const [page, setPage] = useState<Page>("dashboard");
   const [portfolio, setPortfolio] = useState<Portfolio | null>(null);
   const [market, setMarket] = useState<Record<AssetSymbol, MarketSnapshot | null>>({ BTC: null, ETH: null });
+  const [marketHistory, setMarketHistory] = useState<Record<AssetSymbol, MarketPriceHistory>>({
+    BTC: { asset: "BTC", recordLimit: 3000, points: [] },
+    ETH: { asset: "ETH", recordLimit: 3000, points: [] },
+  });
   const [strategy, setStrategy] = useState<Record<AssetSymbol, StrategyResult | null>>({ BTC: null, ETH: null });
   const [isDashboardLoading, setIsDashboardLoading] = useState(true);
   const [isDashboardRefreshing, setIsDashboardRefreshing] = useState(true);
@@ -52,13 +56,17 @@ export default function App() {
         api.market("ETH"),
         api.strategy("BTC"),
         api.strategy("ETH"),
+        api.marketHistory("BTC"),
+        api.marketHistory("ETH"),
       ]);
-      const [portfolioResult, btcMarket, ethMarket, btcStrategy, ethStrategy] = results;
+      const [portfolioResult, btcMarket, ethMarket, btcStrategy, ethStrategy, btcHistory, ethHistory] = results;
       if (portfolioResult.status === "fulfilled") setPortfolio(portfolioResult.value);
       if (btcMarket.status === "fulfilled") setMarket((current) => ({ ...current, BTC: btcMarket.value }));
       if (ethMarket.status === "fulfilled") setMarket((current) => ({ ...current, ETH: ethMarket.value }));
       if (btcStrategy.status === "fulfilled") setStrategy((current) => ({ ...current, BTC: btcStrategy.value }));
       if (ethStrategy.status === "fulfilled") setStrategy((current) => ({ ...current, ETH: ethStrategy.value }));
+      if (btcHistory.status === "fulfilled") setMarketHistory((current) => ({ ...current, BTC: btcHistory.value }));
+      if (ethHistory.status === "fulfilled") setMarketHistory((current) => ({ ...current, ETH: ethHistory.value }));
 
       for (const result of results) {
         if (result.status === "rejected") failures.push(result.reason);
@@ -86,10 +94,12 @@ export default function App() {
         failures.push(error);
       }
 
-      const results = await Promise.allSettled([api.market("BTC"), api.market("ETH")]);
-      const [btcMarket, ethMarket] = results;
+      const results = await Promise.allSettled([api.market("BTC"), api.market("ETH"), api.marketHistory("BTC"), api.marketHistory("ETH")]);
+      const [btcMarket, ethMarket, btcHistory, ethHistory] = results;
       if (btcMarket.status === "fulfilled") setMarket((current) => ({ ...current, BTC: btcMarket.value }));
       if (ethMarket.status === "fulfilled") setMarket((current) => ({ ...current, ETH: ethMarket.value }));
+      if (btcHistory.status === "fulfilled") setMarketHistory((current) => ({ ...current, BTC: btcHistory.value }));
+      if (ethHistory.status === "fulfilled") setMarketHistory((current) => ({ ...current, ETH: ethHistory.value }));
       for (const result of results) {
         if (result.status === "rejected") failures.push(result.reason);
       }
@@ -149,6 +159,11 @@ export default function App() {
     await api.saveRuntimeConfig({ priceRefreshIntervalSeconds: seconds });
     setPriceRefreshIntervalSeconds(seconds);
   }
+  async function handlePriceHistoryLimitChange(asset: AssetSymbol, recordLimit: number) {
+    await api.saveMarketHistorySettings(asset, recordLimit);
+    const updated = await api.marketHistory(asset);
+    setMarketHistory((current) => ({ ...current, [asset]: updated }));
+  }
 
   return (
     <main className="app-shell">
@@ -160,7 +175,7 @@ export default function App() {
         <p className={connectionError ? "connection connection--error" : "connection"}>{connectionError ? `Data unavailable: ${connectionError}` : "Local API connected"}</p>
       </aside>
       <section className="content">
-        {page === "dashboard" && <DashboardPage isLoading={isDashboardLoading} isRefreshing={isDashboardRefreshing} lastRefreshedAt={lastDashboardRefresh} market={market} onPriceRefreshIntervalChange={handlePriceRefreshIntervalChange} onRefresh={refreshDashboard} onResolveRecommendation={handleResolveRecommendation} portfolio={portfolio} priceRefreshIntervalSeconds={priceRefreshIntervalSeconds} strategy={strategy} />}
+        {page === "dashboard" && <DashboardPage isLoading={isDashboardLoading} isRefreshing={isDashboardRefreshing} lastRefreshedAt={lastDashboardRefresh} market={market} marketHistory={marketHistory} onPriceHistoryLimitChange={handlePriceHistoryLimitChange} onPriceRefreshIntervalChange={handlePriceRefreshIntervalChange} onRefresh={refreshDashboard} onResolveRecommendation={handleResolveRecommendation} portfolio={portfolio} priceRefreshIntervalSeconds={priceRefreshIntervalSeconds} strategy={strategy} />}
         {page === "portfolio" && <PortfolioPage isLoading={isDashboardLoading} onSaved={handlePortfolioSaved} portfolio={portfolio} />}
         {page === "history" && <HistoryPage />}
         {page === "settings" && <StrategySettingsPage />}

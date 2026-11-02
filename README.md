@@ -11,6 +11,9 @@ place orders, or execute trades.
   default while the Dashboard is open.
 - Persists the current display price and up to 250 completed UTC daily OHLC
   candles locally in SQLite.
+- Records each BTC and ETH quote received while the app is running in a
+  bounded per-asset history (3,000 samples by default), without backfilling
+  gaps while the app is closed.
 - Evaluates one selected deterministic, explainable strategy per asset using
   only completed daily candles. `Recovery Breakout` is the original staged
   recovery strategy; `Dip Accumulation` confirms the same first entry, then
@@ -101,7 +104,11 @@ default until an in-app value is saved. Use **Refresh** for an immediate full
 reload of market data, the local portfolio, and strategy results. It labels
 the completed daily close used as the decision basis separately from the
 intraday display price. When a refreshed display price changes, the card
-briefly animates the signed dollar difference in green or red.
+briefly animates the signed dollar difference in green or red. Each asset card
+also plots every retained sample, with the time axis spanning the oldest
+through newest stored record. Use the card's **Keep latest** control to change
+that asset's history limit; lowering it removes the oldest excess samples
+immediately.
 
 ### Portfolio
 
@@ -231,6 +238,7 @@ recommendation.
 | `GET` | `/healthz` | Local API health check |
 | `GET` / `PUT` | `/api/runtime-config` | Read or update dashboard runtime settings |
 | `GET` | `/api/market/{asset}` | Current display snapshot for BTC or ETH |
+| `GET` / `PUT` | `/api/market/{asset}/history` | All retained quote samples and per-asset retention limit |
 | `POST` | `/api/market/refresh` | Immediately refresh display prices and completed daily candles |
 | `POST` | `/api/market/prices/refresh` | Refresh display prices without downloading daily candles |
 | `GET` | `/api/strategy/{asset}` | Deterministic completed-daily-candle advisory result |

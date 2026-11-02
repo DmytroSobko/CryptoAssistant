@@ -1,12 +1,15 @@
 import { useEffect, useRef, useState } from "react";
-import type { AssetPosition, AssetSymbol, MarketSnapshot, StrategyResult } from "../types/api";
+import { PriceHistoryChart } from "./PriceHistoryChart";
+import type { AssetPosition, AssetSymbol, MarketPriceHistory, MarketSnapshot, StrategyResult } from "../types/api";
 
 interface AssetCardProps {
   asset: AssetSymbol;
+  history: MarketPriceHistory;
   position?: AssetPosition;
   market: MarketSnapshot | null;
   strategy: StrategyResult | null;
   isLoading: boolean;
+  onPriceHistoryLimitChange: (asset: AssetSymbol, recordLimit: number) => Promise<void>;
   onResolveRecommendation: (id: number, status: "EXECUTED" | "DISMISSED") => void;
 }
 
@@ -42,7 +45,7 @@ function strategyName(strategyId: StrategyResult["strategyId"]): string {
   return strategyId === "DIP_ACCUMULATION" ? "Dip Accumulation" : "Recovery Breakout";
 }
 
-export function AssetCard({ asset, position, market, strategy, isLoading, onResolveRecommendation }: AssetCardProps) {
+export function AssetCard({ asset, history, position, market, strategy, isLoading, onPriceHistoryLimitChange, onResolveRecommendation }: AssetCardProps) {
   const previousPrice = useRef<number | null>(market?.price ?? null);
   const priceDeltaSequence = useRef(0);
   const [priceDelta, setPriceDelta] = useState<{ id: number; value: number } | null>(null);
@@ -91,6 +94,7 @@ export function AssetCard({ asset, position, market, strategy, isLoading, onReso
 		<div><dt>Historical peak average</dt><dd>{strategy?.historicalPeakAverage ? currency(strategy.historicalPeakAverage) : "—"}</dd></div>
       </dl>
       <p className="market-timestamp">{market ? `Display price updated: ${timestamp(market.updatedAt)}` : "No display price has been loaded."}</p>
+      <PriceHistoryChart asset={asset} history={history} onRecordLimitChange={onPriceHistoryLimitChange} />
       <section className="signal">
         <div className="signal__heading"><span className="eyebrow">Current action</span>{strategy && <span className="strategy-label">{strategyName(strategy.strategyId)}</span>}</div>
         <strong className={actionClass}>{action}</strong>

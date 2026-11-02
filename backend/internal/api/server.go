@@ -49,6 +49,8 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /api/runtime-config", s.handleRuntimeConfig)
 	mux.HandleFunc("PUT /api/runtime-config", s.handleUpdateRuntimeConfig)
 	mux.HandleFunc("GET /api/market/{asset}", s.handleMarket)
+	mux.HandleFunc("GET /api/market/{asset}/history", s.handleMarketHistory)
+	mux.HandleFunc("PUT /api/market/{asset}/history", s.handleUpdateMarketHistory)
 	mux.HandleFunc("POST /api/market/refresh", s.handleRefreshMarket)
 	mux.HandleFunc("POST /api/market/prices/refresh", s.handleRefreshPrices)
 	mux.HandleFunc("GET /api/strategy/{asset}", s.handleStrategy)
@@ -125,6 +127,51 @@ func (s *Server) handleMarket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, snapshot)
+}
+
+func (s *Server) handleMarketHistory(w http.ResponseWriter, r *http.Request) {
+	asset, ok := validAsset(r.PathValue("asset"))
+	if !ok {
+		writeError(w, http.StatusBadRequest, "asset must be BTC or ETH")
+		return
+	}
+	points, err := s.store.ListPriceHistory(r.Context(), asset, time.Time{})
+	if err != nil {
+		log.Printf("load %s price history: %v", asset, err)
+		writeError(w, http.StatusInternalServerError, "could not load price history")
+		return
+	}
+	recordLimit, err := s.store.PriceHistoryRecordLimit(r.Context(), asset)
+	if err != nil {
+		log.Printf("load %s price history settings: %v", asset, err)
+		writeError(w, http.StatusInternalServerError, "could not load price history settings")
+		return
+	}
+	writeJSON(w, http.StatusOK, struct {
+		Asset       string               `json:"asset"`
+		RecordLimit int                  `json:"recordLimit"`
+		Points      []storage.PricePoint `json:"points"`
+	}{Asset: asset, RecordLimit: recordLimit, Points: points})
+}
+
+func (s *Server) handleUpdateMarketHistory(w http.ResponseWriter, r *http.Request) {
+	asset, ok := validAsset(r.PathValue("asset"))
+	if !ok {
+		writeError(w, http.StatusBadRequest, "asset must be BTC or ETH")
+		return
+	}
+	var input struct {
+		RecordLimit int `json:"recordLimit"`
+	}
+	if err := decodeJSON(r, &input); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := s.store.SavePriceHistoryRecordLimit(r.Context(), asset, input.RecordLimit); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // handleRefreshMarket refreshes public display prices and completed daily

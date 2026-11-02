@@ -311,6 +311,45 @@ func TestMarketEndpointReturnsPersistedCurrentPrice(t *testing.T) {
 	}
 }
 
+func TestMarketHistoryEndpointsReturnAllRetainedPointsAndPersistPerAssetLimit(t *testing.T) {
+	store, err := storage.Open(filepath.Join(t.TempDir(), "assistant.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { store.Close() })
+	if err := store.Migrate("../../migrations"); err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	now := time.Now().UTC()
+	if err := store.SaveCurrentPrice(ctx, market.Snapshot{Symbol: "BTC", Price: 83000, UpdatedAt: now.Add(-25 * time.Hour)}); err != nil {
+		t.Fatal(err)
+	}
+	for index, price := range []float64{84000, 84100} {
+		if err := store.SaveCurrentPrice(ctx, market.Snapshot{Symbol: "BTC", Price: price, UpdatedAt: now.Add(time.Duration(index-2) * time.Minute)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	handler := NewServer(store, config.Config{}, nil).Routes()
+
+	loaded := serve(handler, http.MethodGet, "/api/market/BTC/history", nil)
+	if loaded.Code != http.StatusOK || !bytes.Contains(loaded.Body.Bytes(), []byte(`"recordLimit":3000`)) || !bytes.Contains(loaded.Body.Bytes(), []byte(`"price":83000`)) || !bytes.Contains(loaded.Body.Bytes(), []byte(`"price":84000`)) || !bytes.Contains(loaded.Body.Bytes(), []byte(`"price":84100`)) {
+		t.Fatalf("market history response (%d): %s", loaded.Code, loaded.Body.String())
+	}
+	updated := serve(handler, http.MethodPut, "/api/market/BTC/history", []byte(`{"recordLimit":1}`))
+	if updated.Code != http.StatusNoContent {
+		t.Fatalf("market history update (%d): %s", updated.Code, updated.Body.String())
+	}
+	loaded = serve(handler, http.MethodGet, "/api/market/BTC/history", nil)
+	if loaded.Code != http.StatusOK || !bytes.Contains(loaded.Body.Bytes(), []byte(`"recordLimit":1`)) || bytes.Contains(loaded.Body.Bytes(), []byte(`"price":84000`)) || !bytes.Contains(loaded.Body.Bytes(), []byte(`"price":84100`)) {
+		t.Fatalf("pruned market history response (%d): %s", loaded.Code, loaded.Body.String())
+	}
+	invalid := serve(handler, http.MethodPut, "/api/market/ETH/history", []byte(`{"recordLimit":0}`))
+	if invalid.Code != http.StatusBadRequest {
+		t.Fatalf("invalid market history update (%d): %s", invalid.Code, invalid.Body.String())
+	}
+}
+
 func TestMarketRefreshEndpointRefreshesPublicDataWithoutEvaluatingStrategy(t *testing.T) {
 	store, err := storage.Open(filepath.Join(t.TempDir(), "assistant.db"))
 	if err != nil {

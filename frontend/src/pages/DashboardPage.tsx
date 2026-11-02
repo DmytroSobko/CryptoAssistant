@@ -1,16 +1,18 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { AssetCard } from "../components/AssetCard";
-import type { AssetSymbol, MarketSnapshot, Portfolio, StrategyResult } from "../types/api";
+import type { AssetSymbol, MarketPriceHistory, MarketSnapshot, Portfolio, StrategyResult } from "../types/api";
 
 interface DashboardPageProps {
   portfolio: Portfolio | null;
   market: Record<AssetSymbol, MarketSnapshot | null>;
+  marketHistory: Record<AssetSymbol, MarketPriceHistory>;
   strategy: Record<AssetSymbol, StrategyResult | null>;
   isLoading: boolean;
   isRefreshing: boolean;
   lastRefreshedAt: Date | null;
   priceRefreshIntervalSeconds: number;
   onPriceRefreshIntervalChange: (seconds: number) => Promise<void>;
+  onPriceHistoryLimitChange: (asset: AssetSymbol, recordLimit: number) => Promise<void>;
   onRefresh: (refreshMarketData?: boolean) => Promise<void>;
   onResolveRecommendation: (id: number, status: "EXECUTED" | "DISMISSED") => void;
 }
@@ -19,7 +21,7 @@ function refreshTime(value: Date | null): string {
   return value ? new Intl.DateTimeFormat("en-US", { timeStyle: "medium" }).format(value) : "Not checked yet";
 }
 
-export function DashboardPage({ portfolio, market, strategy, isLoading, isRefreshing, lastRefreshedAt, priceRefreshIntervalSeconds, onPriceRefreshIntervalChange, onRefresh, onResolveRecommendation }: DashboardPageProps) {
+export function DashboardPage({ portfolio, market, marketHistory, strategy, isLoading, isRefreshing, lastRefreshedAt, priceRefreshIntervalSeconds, onPriceHistoryLimitChange, onPriceRefreshIntervalChange, onRefresh, onResolveRecommendation }: DashboardPageProps) {
   const [intervalDraft, setIntervalDraft] = useState(String(priceRefreshIntervalSeconds));
   const [intervalMessage, setIntervalMessage] = useState<string | null>(null);
   const [intervalError, setIntervalError] = useState(false);
@@ -75,8 +77,8 @@ export function DashboardPage({ portfolio, market, strategy, isLoading, isRefres
         </div>
       </header>
       <div className="asset-grid">
-        <AssetCard asset="BTC" position={position("BTC")} market={market.BTC} strategy={strategy.BTC} isLoading={isLoading} onResolveRecommendation={onResolveRecommendation} />
-        <AssetCard asset="ETH" position={position("ETH")} market={market.ETH} strategy={strategy.ETH} isLoading={isLoading} onResolveRecommendation={onResolveRecommendation} />
+        <AssetCard asset="BTC" history={marketHistory.BTC} position={position("BTC")} market={market.BTC} strategy={strategy.BTC} isLoading={isLoading} onPriceHistoryLimitChange={onPriceHistoryLimitChange} onResolveRecommendation={onResolveRecommendation} />
+        <AssetCard asset="ETH" history={marketHistory.ETH} position={position("ETH")} market={market.ETH} strategy={strategy.ETH} isLoading={isLoading} onPriceHistoryLimitChange={onPriceHistoryLimitChange} onResolveRecommendation={onResolveRecommendation} />
       </div>
     </>
   );
